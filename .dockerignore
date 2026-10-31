@@ -1,0 +1,4 @@
+# Only the bundled files are needed in the build context.
+*
+!apps/api/dist/main.js
+!apps/worker/dist/main.js

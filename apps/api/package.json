@@ -1,0 +1,15 @@
+{
+  "name": "@stylist/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/main.js --external:pg-native --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
+  },
+  "dependencies": {
+    "@stylist/contracts": "workspace:*",
+    "@stylist/db": "workspace:*",
+    "fastify": "^5.2.0"
+  }
+}
