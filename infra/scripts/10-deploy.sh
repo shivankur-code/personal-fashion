@@ -12,9 +12,22 @@ PARAMS=(-p "$HERE/$ENV.bicepparam" -p anthropicApiKey="${ANTHROPIC_API_KEY:-}" -
 if [ "$ENV" != "dev" ]; then
   PARAMS+=(-p pgAdminPassword="${PG_ADMIN_PASSWORD:?set PG_ADMIN_PASSWORD}")
 fi
-# Optional: deploy our own images (first release, or an infrastructure change after it).
+# Images: IMAGE_TAG if given; otherwise keep whatever our registry image is live now, so an
+# infrastructure-only change never puts the placeholder image back.
+REG=${ACR_NAME:-myuniquebioregistry}.azurecr.io
+if [ -z "${IMAGE_TAG:-}" ]; then
+  # Any failure to read the live state stops the script: a network blip must never downgrade the API.
+  if ! LIVE=$(az containerapp list -g "$RG" --query "[?name=='stylist-$ENV-api'].properties.template.containers[0].image | [0]" -o tsv); then
+    echo "Could not read the live API image. Re-run, or set IMAGE_TAG explicitly." >&2
+    exit 1
+  fi
+  case "$LIVE" in
+    "$REG/stylist-api:"*) IMAGE_TAG=${LIVE##*:}; echo "[1.0] keeping live image tag $IMAGE_TAG" ;;
+    "") echo "[1.0] API not created yet; using the template's placeholder image" ;;
+    *) echo "Live API image is '$LIVE' (not ours). Set IMAGE_TAG explicitly." >&2; exit 1 ;;
+  esac
+fi
 if [ -n "${IMAGE_TAG:-}" ]; then
-  REG=${ACR_NAME:-myuniquebioregistry}.azurecr.io
   PARAMS+=(-p apiImage="$REG/stylist-api:$IMAGE_TAG" -p workerImage="$REG/stylist-worker:$IMAGE_TAG")
 fi
 
