@@ -18,7 +18,9 @@ let auth: Auth | null = null;
 
 async function googleToken(interactive: boolean): Promise<string | null> {
   try {
-    const r = await chrome.identity.getAuthToken({ interactive });
+    // Chrome's sign-in window can be closed or never appear; don't wait forever.
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), interactive ? 120_000 : 15_000));
+    const r = await Promise.race([chrome.identity.getAuthToken({ interactive }), timeout]);
     return r?.token ?? null;
   } catch {
     return null;

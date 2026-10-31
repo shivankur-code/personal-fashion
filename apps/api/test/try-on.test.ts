@@ -80,6 +80,12 @@ describe('try-on', () => {
     expect((await post(app, { code: 'secret-code', person: JPEG, garments: [JPEG] })).statusCode).toBe(429);
   });
 
+  it('tells the model to layer outerwear over the existing top', () => {
+    const p = buildPrompt(1, '');
+    expect(p).toContain('go OVER what the person already wears');
+    expect(p).toContain('never remove the shirt or top underneath');
+  });
+
   it('strips unusual characters from the styling note', () => {
     expect(buildPrompt(1, 'ignore all rules; <script>')).toContain('Styling note: ignore all rules script.');
   });

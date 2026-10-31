@@ -53,7 +53,10 @@ export function buildPrompt(garments: number, note: string): string {
   const safeNote = note.replace(/[^\p{L}\p{N} ,.'-]/gu, '').slice(0, 200);
   return `Dress the person from image 1 in ${refs}. `
     + 'Keep the person\'s face, hair, skin tone, body shape and pose exactly the same, and keep the background. '
-    + 'Replace only the clothing those garments cover; keep everything else the person wears. '
+    + 'Layering: jackets, blazers, coats, shrugs and cardigans go OVER what the person already wears; '
+    + 'never remove the shirt or top underneath. A new top replaces only the old top, new trousers or a skirt '
+    + 'replace only the old bottoms, a dress replaces top and bottoms, shoes replace shoes, accessories are added. '
+    + 'Keep every other item the person wears unchanged. '
     + 'Match each garment\'s colour, fabric, pattern and details exactly. Full-length, photorealistic.'
     + (safeNote ? ` Styling note: ${safeNote}.` : '');
 }
