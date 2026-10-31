@@ -14,11 +14,12 @@ const account = process.env.STORAGE_ACCOUNT;
 const blobs = account && hasIdentity ? new AzureBlobStore(account, tokens) : null;
 const accessCode = process.env.TRY_ACCESS_CODE ?? '';
 const maxGarments = Number(process.env.TRY_MAX_GARMENTS ?? 3);
-// Free vision model for the decision and check steps. Short timeout and one retry: if the free
-// pool is busy, the pipeline falls back to title rules instead of making the user wait.
+// Free vision model for the decision and check steps. The body-reading decision call took over 30 s
+// live (31 Oct), so allow 75 s; no provider-level retry, because the pipeline already moves on to
+// the next model and then falls back to title rules.
 const llmKey = process.env.LLM_API_KEY ?? '';
 const reasoner = llmKey && llmKey !== 'unset'
-  ? new OpenRouterReasoner({ apiKey: llmKey, appName: 'Stylist', timeoutMs: 30_000, maxRetries: 1, ...(process.env.LLM_BASE_URL ? { baseUrl: process.env.LLM_BASE_URL } : {}) })
+  ? new OpenRouterReasoner({ apiKey: llmKey, appName: 'Stylist', timeoutMs: 75_000, maxRetries: 0, ...(process.env.LLM_BASE_URL ? { baseUrl: process.env.LLM_BASE_URL } : {}) })
   : null;
 const pipeline = {
   generator,

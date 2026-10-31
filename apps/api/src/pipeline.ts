@@ -108,7 +108,7 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
           system: DECIDE_SYSTEM, user: decideUserText(garments, { note: ctx.note, profile }),
           images: [person, ...garments.flatMap((g) => g.images)].map(asInput),
           jsonSchema: DECIDE_SCHEMA, maxOutputTokens: Math.min(10_000, 3000 + 1000 * garments.length),
-        }, AbortSignal.timeout(50_000));
+        }, AbortSignal.timeout(80_000));
         decisions = parseDecisions(r.json, garments);
         advice = parseAdvice(r.json, garments.length);
         cost.usd += r.usage.costUsd ?? 0;
