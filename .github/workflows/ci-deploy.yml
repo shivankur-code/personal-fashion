@@ -85,8 +85,8 @@ jobs:
           TAG=${GITHUB_SHA::12}
           echo "TAG=$TAG" >> $GITHUB_ENV
           az acr login -n $ACR
-          docker build --build-arg GIT_SHA=$TAG -f apps/api/Dockerfile -t $ACR.azurecr.io/stylist-api:$TAG .
-          docker build --build-arg GIT_SHA=$TAG -f apps/worker/Dockerfile -t $ACR.azurecr.io/stylist-worker:$TAG .
+          docker build --build-arg GIT_SHA=$TAG --build-arg BASE_IMAGE=$ACR.azurecr.io/base/node:22-alpine -f apps/api/Dockerfile -t $ACR.azurecr.io/stylist-api:$TAG .
+          docker build --build-arg GIT_SHA=$TAG --build-arg BASE_IMAGE=$ACR.azurecr.io/base/node:22-alpine -f apps/worker/Dockerfile -t $ACR.azurecr.io/stylist-worker:$TAG .
           docker push $ACR.azurecr.io/stylist-api:$TAG
           docker push $ACR.azurecr.io/stylist-worker:$TAG
 
