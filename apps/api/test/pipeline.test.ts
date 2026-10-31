@@ -143,4 +143,33 @@ describe('try-on pipeline', () => {
       .rejects.toThrow('look like clothing');
     expect(gen.calls).toHaveLength(0);
   });
+
+  it('asks the next model when the first returns an empty answer, with a budget that grows per item', async () => {
+    const gen = generator();
+    const seen: ReasonRequest[] = [];
+    const r: Reasoner = {
+      provider: 'fake',
+      async reason(req) {
+        seen.push(req);
+        if (req.jsonSchema?.name === 'garment_decisions' && seen.length === 1) throw new Error('empty answer (finish_reason=length)');
+        const ans = req.jsonSchema?.name === 'garment_decisions'
+          ? { products: [{ product: 1, best_photo: 1, category: 'bottom', worn_by_model: true, description: 'blue jeans' }] }
+          : { same_person: true, item_worn: true, reason: 'ok' };
+        return { text: '', json: ans, model: req.model, latencyMs: 1, usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
+      },
+    };
+    const out = await runTryOn({ generator: gen.g, reasoner: r, check: true, maxRetries: 0, env: { LLM_MODELS_CLASSIFY: 'a,b,c' } },
+      PERSON, [{ images: [img(2)] }], '');
+    expect(seen[0]).toMatchObject({ model: 'a', fallbackModels: ['b', 'c'], maxOutputTokens: 3000 });
+    expect(seen[1]).toMatchObject({ model: 'b', fallbackModels: ['c'] });
+    expect(out.passes[0]).toMatchObject({ category: 'bottom', decidedBy: 'model' });
+  });
+
+  it('without a model answer or a title, lets the image model work out the item instead of assuming a top', async () => {
+    const gen = generator();
+    const out = await runTryOn({ generator: gen.g, reasoner: null, check: false, maxRetries: 0 }, PERSON, [{ images: [img(2)] }], '');
+    expect(out.passes[0]!.category).toBe('unknown');
+    expect(gen.calls[0]!.prompt).toContain('First work out what kind of item image 2 shows');
+    expect(gen.calls[0]!.prompt).not.toContain('Replace only the top');
+  });
 });

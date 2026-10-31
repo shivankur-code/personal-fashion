@@ -4,11 +4,13 @@
 // The decision prompt adapts the "Photo Identification Protocol" and outfit-assembly order from
 // fashion-skill by Dawid Piaskowski (https://github.com/googlarz/fashion-skill), CC BY 4.0.
 
+/** Categories the decision model may answer with. */
 export const CATEGORIES = ['one-piece', 'bottom', 'top', 'outerwear', 'shoes', 'accessory', 'not-clothing'] as const;
-export type Category = (typeof CATEGORIES)[number];
+/** 'unknown' is ours only: no model answer and nothing recognisable in the title. */
+export type Category = (typeof CATEGORIES)[number] | 'unknown';
 
 /** Dressing order: base layers first, so each pass only adds or swaps one thing. */
-const ORDER: Record<Category, number> = { 'one-piece': 0, bottom: 1, top: 2, outerwear: 3, shoes: 4, accessory: 5, 'not-clothing': 6 };
+const ORDER: Record<Category, number> = { 'one-piece': 0, bottom: 1, top: 2, unknown: 2, outerwear: 3, shoes: 4, accessory: 5, 'not-clothing': 6 };
 
 export interface GarmentInput {
   /** Candidate photos of one product, best guess first. */
@@ -43,9 +45,13 @@ export function categoryFromTitle(title: string | undefined): Category | null {
   return null;
 }
 
-/** Used when the decision model is unavailable: first photo, category from the title. */
+/**
+ * Used when the decision model is unavailable: first photo, category from the title. Without a
+ * recognisable title the category is 'unknown' and the render prompt lets the image model work out
+ * what the item is (guessing "top" turned jeans into a shirt swap in a live test).
+ */
 export function ruleDecision(g: GarmentInput): Decision {
-  return { image: 0, category: categoryFromTitle(g.title) ?? 'top', description: '', wornByModel: true, source: 'rules' };
+  return { image: 0, category: categoryFromTitle(g.title) ?? 'unknown', description: '', wornByModel: true, source: 'rules' };
 }
 
 export interface PlannedGarment { index: number; decision: Decision }
@@ -81,6 +87,7 @@ const PLACEMENT: Record<Exclude<Category, 'not-clothing'>, string> = {
   outerwear: 'Put this garment on OVER what the person already wears. Never remove the shirt or top underneath; it should stay visible at the neckline and front if the garment is open.',
   shoes: 'Replace only the footwear. Keep all clothing exactly as it is.',
   accessory: 'Add this accessory. Keep all clothing exactly as it is.',
+  unknown: 'First work out what kind of item image 2 shows (top, trousers or skirt, dress, jacket, shoes or accessory), then replace only the matching item the person wears; jackets and coats go over the current top. Keep everything else exactly as it is.',
 };
 
 /**
@@ -92,7 +99,7 @@ export function passPrompt(d: Decision, opts: { anchor: boolean; note: string; r
   const desc = clean(d.description, 160);
   const note = clean(opts.note, 200);
   return [
-    `Dress the person in image 1 in the ${cat === 'one-piece' ? 'outfit' : cat} shown in image 2${desc ? ` (${desc})` : ''}.`,
+    `Dress the person in image 1 in the ${cat === 'one-piece' ? 'outfit' : cat === 'unknown' ? 'item' : cat} shown in image 2${desc ? ` (${desc})` : ''}.`,
     PLACEMENT[cat],
     d.wornByModel
       ? 'Image 2 is a shop photo of someone else wearing the item: copy only the item, never that model\'s face, hair, body, skin tone or pose.'
@@ -172,7 +179,7 @@ export function parseDecisions(json: unknown, garments: GarmentInput[]): Decisio
     const fallback = ruleDecision(g);
     if (!row) return fallback;
     const photo = Number(row.best_photo) - 1 - offsets[i]!;
-    const category = CATEGORIES.includes(row.category as Category) ? row.category as Category : fallback.category;
+    const category = (CATEGORIES as readonly string[]).includes(row.category as string) ? row.category as Category : fallback.category;
     return {
       image: Number.isInteger(photo) && photo >= 0 && photo < g.images.length ? photo : 0,
       category,

@@ -72,20 +72,29 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
   //    configured, because its description makes the render more faithful.
   let decisions = garments.map(ruleDecision);
   if (deps.reasoner) {
+    // A reasoning model can spend its whole budget thinking (seen live with 5 items: empty answer,
+    // finish_reason=length). So: budget grows with the item count, and on failure we ask once more
+    // starting from the next model in the list.
     const m = classifyModels(env);
-    try {
-      const r = await deps.reasoner.reason({
-        model: m.model, fallbackModels: m.fallbackModels, reasoningEffort: 'low', temperature: 0,
-        system: DECIDE_SYSTEM, user: decideUserText(garments),
-        images: garments.flatMap((g) => g.images.map(asInput)),
-        jsonSchema: DECIDE_SCHEMA, maxOutputTokens: 2000,
-      }, AbortSignal.timeout(45_000));
-      decisions = parseDecisions(r.json, garments);
-      cost += r.usage.costUsd ?? 0;
-      deps.log?.info({ model: r.model, latencyMs: r.latencyMs, decisions: decisions.map((d) => [d.category, d.image, d.wornByModel]) }, 'try-on decided');
-    } catch (err) {
-      deps.log?.warn({ err: String(err).slice(0, 200) }, 'decision model unavailable; using title rules');
+    const all = [m.model, ...m.fallbackModels];
+    for (const list of [all, all.slice(1)]) {
+      if (list.length === 0) break;
+      try {
+        const r = await deps.reasoner.reason({
+          model: list[0]!, fallbackModels: list.slice(1), reasoningEffort: 'low', temperature: 0,
+          system: DECIDE_SYSTEM, user: decideUserText(garments),
+          images: garments.flatMap((g) => g.images.map(asInput)),
+          jsonSchema: DECIDE_SCHEMA, maxOutputTokens: Math.min(8000, 2000 + 1000 * garments.length),
+        }, AbortSignal.timeout(45_000));
+        decisions = parseDecisions(r.json, garments);
+        cost += r.usage.costUsd ?? 0;
+        deps.log?.info({ model: r.model, latencyMs: r.latencyMs, decisions: decisions.map((d) => [d.category, d.image, d.wornByModel]) }, 'try-on decided');
+        break;
+      } catch (err) {
+        deps.log?.warn({ model: list[0], err: String(err).slice(0, 200) }, 'decision model failed');
+      }
     }
+    if (decisions.every((d) => d.source === 'rules')) deps.log?.warn({}, 'decision model unavailable; using title rules');
   }
 
   const { passes, notes } = planOutfit(decisions);
