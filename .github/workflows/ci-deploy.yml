@@ -56,7 +56,8 @@ jobs:
             apps/worker/dist/main.js
 
   deploy-dev:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Skipped until Azure sign-in for GitHub (OIDC) is set up and AZURE_CLIENT_ID is a repository variable.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AZURE_CLIENT_ID != ''
     needs: check
     runs-on: ubuntu-latest
     environment: dev
