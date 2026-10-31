@@ -2,12 +2,14 @@ import type { Health } from '@stylist/contracts';
 import { ping } from '@stylist/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { registerTryOn, type TryOnDeps } from './try-on.js';
 
 export interface ServerDeps {
   /** Null when no database is configured yet (dev before Neon is set up). */
   pool: pg.Pool | null;
   version: string;
   logger?: boolean;
+  tryOn?: TryOnDeps;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -50,8 +52,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     service: 'stylist-api',
     status: 'ok',
     version: deps.version,
-    routes: ['/healthz', '/readyz', '/v1/version'],
+    routes: ['/try', '/healthz', '/readyz', '/v1/version'],
   }));
+
+  if (deps.tryOn) registerTryOn(app, deps.tryOn);
 
   return app;
 }

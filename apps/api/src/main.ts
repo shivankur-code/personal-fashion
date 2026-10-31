@@ -1,9 +1,22 @@
 import { createPool, isDatabaseConfigured } from '@stylist/db';
+import { FluxImageGenerator, managedIdentityTokenProvider } from '@stylist/model-gateway';
 import { buildServer } from './server.js';
 
 const url = process.env.DATABASE_URL;
 const pool = isDatabaseConfigured(url) ? createPool(url) : null;
-const app = buildServer({ pool, version: process.env.GIT_SHA ?? 'dev' });
+const foundry = process.env.FOUNDRY_ENDPOINT;
+const generator = foundry && process.env.IDENTITY_ENDPOINT
+  ? new FluxImageGenerator({ endpoint: foundry, tokenProvider: managedIdentityTokenProvider() })
+  : null;
+const app = buildServer({
+  pool,
+  version: process.env.GIT_SHA ?? 'dev',
+  tryOn: {
+    generator,
+    accessCode: process.env.TRY_ACCESS_CODE ?? '',
+    dailyLimit: Number(process.env.TRY_DAILY_LIMIT ?? 30),
+  },
+});
 
 const port = Number(process.env.PORT ?? 8080);
 await app.listen({ host: '0.0.0.0', port });

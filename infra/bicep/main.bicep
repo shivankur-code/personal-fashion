@@ -46,6 +46,13 @@ param workerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('API key for the reasoning model provider (OpenRouter). Passed from the shell, never stored in files.')
 param llmApiKey string = ''
 
+@secure()
+@description('Access code for the /try page. Empty disables the page (fail closed).')
+param tryAccessCode string = ''
+
+@description('Most try-ons per day per API copy.')
+param tryDailyLimit int = 30
+
 @description('Reasoning model provider and endpoint.')
 param llmProvider string = 'openrouter'
 param llmBaseUrl string = 'https://openrouter.ai/api/v1'
@@ -326,7 +333,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
       // keeps serving until then (zero-downtime). Rollback = redeploy the previous image tag.
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: apiPort, transport: 'auto', allowInsecure: false }
-      secrets: commonSecrets
+      secrets: concat(commonSecrets, [ { name: 'try-access-code', value: empty(tryAccessCode) ? 'unset' : tryAccessCode } ])
       registries: registries
     }
     template: {
@@ -335,7 +342,11 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'api'
           image: apiImage
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
-          env: concat(commonEnv, [ { name: 'PG_POOL_MAX', value: '5' } ])
+          env: concat(commonEnv, [
+            { name: 'PG_POOL_MAX', value: '5' }
+            { name: 'TRY_ACCESS_CODE', secretRef: 'try-access-code' }
+            { name: 'TRY_DAILY_LIMIT', value: string(tryDailyLimit) }
+          ])
           probes: apiProbes
         }
       ]

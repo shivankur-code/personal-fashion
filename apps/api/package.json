@@ -10,6 +10,7 @@
   "dependencies": {
     "@stylist/contracts": "workspace:*",
     "@stylist/db": "workspace:*",
-    "fastify": "^5.2.0"
+    "fastify": "^5.2.0",
+    "@stylist/model-gateway": "workspace:*"
   }
 }

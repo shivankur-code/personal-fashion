@@ -44,6 +44,9 @@ importers:
       '@stylist/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@stylist/model-gateway':
+        specifier: workspace:*
+        version: link:../../packages/model-gateway
       fastify:
         specifier: ^5.2.0
         version: 5.12.7
