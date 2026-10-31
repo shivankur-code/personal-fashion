@@ -7,6 +7,10 @@ const PLATFORM_FREE = ['packages/contracts/**', 'packages/core/**'];
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', 'infra/**'] },
   js.configs.recommended,
+  {
+    files: ['**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly' } },
+  },
   ...tseslint.configs.recommended,
   {
     files: PLATFORM_FREE,

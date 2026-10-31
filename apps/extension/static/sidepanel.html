@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stylist</title>
+<style>
+  :root { --bg:#fafaf8; --fg:#1d1d1b; --muted:#6b6b66; --line:#e2e1dc; --accent:#1f4e8c; --card:#fff; --ok:#2e7d32; --err:#c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151514; --fg:#ecebe6; --muted:#a3a29b; --line:#33332f; --accent:#7fa8e0; --card:#1e1e1c; --ok:#7bc47f; --err:#ef7b6e; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--line); }
+  header b { font-size:16px; }
+  #who { color:var(--muted); font-size:12px; }
+  nav { display:flex; border-bottom:1px solid var(--line); }
+  nav button { flex:1; padding:10px; border:0; background:none; color:var(--muted); font-weight:600; cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.on { color:var(--fg); border-bottom-color:var(--accent); }
+  section { padding:14px; }
+  .hidden { display:none !important; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; }
+  .btn { display:block; width:100%; margin-top:12px; padding:10px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:none; color:var(--accent); border:1px solid var(--line); }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .link { background:none; border:0; color:var(--accent); cursor:pointer; padding:0; font:inherit; font-size:12px; }
+  .status { font-size:12px; color:var(--muted); margin-top:8px; min-height:16px; }
+  .status.ok { color:var(--ok); } .status.err { color:var(--err); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { padding:5px 10px; border:1px solid var(--line); border-radius:999px; cursor:pointer; background:var(--card); font-size:13px; }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tones { display:flex; gap:4px; }
+  .tone { flex:1; height:26px; border-radius:6px; cursor:pointer; border:2px solid transparent; }
+  .tone.on { border-color:var(--accent); }
+  .items { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:10px; }
+  .item { position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--card); cursor:pointer; }
+  .item.on { outline:3px solid var(--accent); }
+  .item img { width:100%; aspect-ratio:3/4; object-fit:contain; background:#fff; display:block; }
+  .item .t { font-size:11px; padding:4px 6px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .x { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; border:0; background:rgba(0,0,0,.55); color:#fff; cursor:pointer; line-height:22px; padding:0; }
+  .empty { color:var(--muted); font-size:13px; padding:16px 0; text-align:center; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  #result img { width:100%; border-radius:8px; margin-top:10px; }
+  #photoPreview { max-height:160px; border-radius:8px; margin-top:8px; display:block; }
+  .toggle { display:flex; align-items:center; justify-content:space-between; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--card); margin-top:12px; }
+</style>
+</head>
+<body>
+<header><b>Stylist</b><span id="who">Not signed in</span></header>
+
+<section id="signin">
+  <p>Sign in to save your profile and photo, and to try clothes on.</p>
+  <button class="btn" id="google">Sign in with Google</button>
+  <div class="status" id="signinStatus"></div>
+  <p style="margin-top:18px"><button class="link" id="showCode">Use an access code instead</button></p>
+  <div id="codeBox" class="hidden">
+    <label for="code">Access code</label><input id="code" type="password">
+    <button class="btn secondary" id="useCode">Continue</button>
+  </div>
+</section>
+
+<div id="app" class="hidden">
+  <nav><button id="tabShop" class="on">Shop</button><button id="tabProfile">Profile</button></nav>
+
+  <section id="shop">
+    <div class="row">
+      <div><label for="occasion">Occasion</label>
+        <select id="occasion">
+          <option value="casual">Casual</option><option value="office">Office</option><option value="date">Date</option>
+          <option value="party">Party</option><option value="wedding">Wedding</option><option value="interview">Interview</option>
+          <option value="festival">Festival</option><option value="travel">Travel</option><option value="custom">Other</option>
+        </select></div>
+    </div>
+    <label for="prompt">Anything specific? (optional)</label>
+    <input id="prompt" maxlength="200" placeholder="e.g. outdoors in summer, nothing too flashy">
+    <div class="toggle"><span id="trackLabel">Collecting is off</span><button class="btn" id="track" style="width:auto;margin:0;padding:6px 12px">Start</button></div>
+    <div class="status" id="trackHint">Start, then browse Amazon, Myntra, Flipkart or Ajio. Items you look at for 3 seconds appear here.</div>
+    <div class="items" id="items"></div>
+    <div class="empty" id="empty">No items yet.</div>
+    <button class="btn" id="tryOn" disabled>Try on selected (0/3)</button>
+    <button class="link" id="clear" style="margin-top:8px">Clear list</button>
+    <div class="status" id="tryStatus"></div>
+    <div id="result"></div>
+  </section>
+
+  <section id="profile" class="hidden">
+    <label>Your full-length photo (stored privately)</label>
+    <input type="file" id="photo" accept="image/*">
+    <img id="photoPreview" class="hidden" alt="Your photo">
+    <div class="status" id="photoStatus"></div>
+    <label>Styles you like</label>
+    <div class="chips" id="styles"></div>
+    <div class="row">
+      <div><label for="height">Height (cm)</label><input id="height" type="number" min="90" max="250"></div>
+      <div><label for="weight">Weight (kg, optional)</label><input id="weight" type="number" min="25" max="300"></div>
+    </div>
+    <label for="fit">Preferred fit</label>
+    <select id="fit"><option value="slim">Slim</option><option value="regular" selected>Regular</option><option value="relaxed">Relaxed</option></select>
+    <label>Skin tone</label><div class="tones" id="tones"></div>
+    <label for="undertone">Undertone</label>
+    <select id="undertone"><option value="">Not sure</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="neutral">Neutral</option></select>
+    <button class="btn" id="saveProfile">Save profile</button>
+    <div class="status" id="profileStatus"></div>
+    <p style="margin-top:20px"><button class="link" id="signout">Sign out</button></p>
+  </section>
+</div>
+<script src="sidepanel.js"></script>
+</body>
+</html>

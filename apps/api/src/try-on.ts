@@ -13,9 +13,24 @@ export interface TryOnDeps {
   now?: () => Date;
 }
 
+/** One counter per API copy, shared by the /try page and the extension. Failed renders are given back. */
+export interface DailyLimiter { take(): boolean; giveBack(): void; remaining(): number; limit: number }
+
+export function createDailyLimiter(limit: number, now: () => Date = () => new Date()): DailyLimiter {
+  let day = '';
+  let used = 0;
+  const roll = () => { const d = now().toISOString().slice(0, 10); if (d !== day) { day = d; used = 0; } };
+  return {
+    limit,
+    take() { roll(); if (used >= limit) return false; used++; return true; },
+    giveBack() { used = Math.max(0, used - 1); },
+    remaining() { roll(); return limit - used; },
+  };
+}
+
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
-function decodeImage(b64: unknown): Buffer | null {
+export function decodeImage(b64: unknown): Buffer | null {
   if (typeof b64 !== 'string' || b64.length === 0) return null;
   const clean = b64.replace(/^data:image\/(jpeg|png|webp);base64,/, '');
   const buf = Buffer.from(clean, 'base64');
@@ -26,7 +41,7 @@ function decodeImage(b64: unknown): Buffer | null {
   return isJpeg || isPng || isWebp ? buf : null;
 }
 
-function codeMatches(given: unknown, expected: string): boolean {
+export function codeMatches(given: unknown, expected: string): boolean {
   if (typeof given !== 'string' || expected === '' || expected === 'unset') return false;
   const a = Buffer.from(given);
   const b = Buffer.from(expected);
@@ -43,10 +58,7 @@ export function buildPrompt(garments: number, note: string): string {
     + (safeNote ? ` Styling note: ${safeNote}.` : '');
 }
 
-export function registerTryOn(app: FastifyInstance, deps: TryOnDeps): void {
-  const now = deps.now ?? (() => new Date());
-  let day = '';
-  let used = 0;
+export function registerTryOn(app: FastifyInstance, deps: TryOnDeps, limiter: DailyLimiter): void {
 
   app.get('/try', async (_req, reply) => {
     reply.header('content-security-policy',
@@ -67,10 +79,7 @@ export function registerTryOn(app: FastifyInstance, deps: TryOnDeps): void {
       return reply.code(400).send({ error: 'Add 1 to 3 garment images (JPEG, PNG or WebP, max 2 MB each).' });
     }
 
-    const today = now().toISOString().slice(0, 10);
-    if (today !== day) { day = today; used = 0; }
-    if (used >= deps.dailyLimit) return reply.code(429).send({ error: `Daily limit of ${deps.dailyLimit} try-ons reached. Try again tomorrow.` });
-    used++;
+    if (!limiter.take()) return reply.code(429).send({ error: `Daily limit of ${limiter.limit} try-ons reached. Try again tomorrow.` });
 
     const note = typeof body.note === 'string' ? body.note : '';
     try {
@@ -86,10 +95,10 @@ export function registerTryOn(app: FastifyInstance, deps: TryOnDeps): void {
         image: `data:image/jpeg;base64,${r.image.toString('base64')}`,
         latencyMs: r.latencyMs,
         estimatedCostUsd: r.estimatedCostUsd,
-        remainingToday: deps.dailyLimit - used,
+        remainingToday: limiter.remaining(),
       };
     } catch (err) {
-      used--; // failed renders don't count
+      limiter.giveBack(); // failed renders don't count
       req.log.error({ err: String(err).slice(0, 300) }, 'try-on failed');
       return reply.code(502).send({ error: 'The image model failed. Please try again in a minute.' });
     }

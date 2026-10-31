@@ -41,7 +41,7 @@ async function uploadBlob(token: TokenProvider, account: string, path: string, b
       authorization: `Bearer ${t}`, 'x-ms-version': '2023-11-03', 'x-ms-blob-type': 'BlockBlob',
       'content-type': contentType, 'content-length': String(body.length),
     },
-    body,
+    body: new Uint8Array(body),
     signal: AbortSignal.timeout(60_000),
   });
   if (res.status !== 201) throw new Error(`blob upload ${path}: ${res.status} ${(await res.text()).slice(0, 200)}`);

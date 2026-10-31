@@ -2,7 +2,8 @@ import type { Health } from '@stylist/contracts';
 import { ping } from '@stylist/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { registerTryOn, type TryOnDeps } from './try-on.js';
+import { registerMe, type MeDeps } from './me.js';
+import { createDailyLimiter, registerTryOn, type TryOnDeps } from './try-on.js';
 
 export interface ServerDeps {
   /** Null when no database is configured yet (dev before Neon is set up). */
@@ -10,6 +11,7 @@ export interface ServerDeps {
   version: string;
   logger?: boolean;
   tryOn?: TryOnDeps;
+  me?: MeDeps;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -55,7 +57,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     routes: ['/try', '/healthz', '/readyz', '/v1/version'],
   }));
 
-  if (deps.tryOn) registerTryOn(app, deps.tryOn);
+  const limiter = createDailyLimiter(deps.tryOn?.dailyLimit ?? 30, deps.tryOn?.now);
+  if (deps.tryOn) registerTryOn(app, deps.tryOn, limiter);
+  if (deps.me) registerMe(app, deps.me, limiter);
 
   return app;
 }

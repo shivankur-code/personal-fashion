@@ -50,6 +50,9 @@ param llmApiKey string = ''
 @description('Access code for the /try page. Empty disables the page (fail closed).')
 param tryAccessCode string = ''
 
+@description('Google accounts allowed to use the extension (comma-separated; "*" = any). Empty = nobody.')
+param allowedEmails string = ''
+
 @description('Most try-ons per day per API copy.')
 param tryDailyLimit int = 30
 
@@ -346,6 +349,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'PG_POOL_MAX', value: '5' }
             { name: 'TRY_ACCESS_CODE', secretRef: 'try-access-code' }
             { name: 'TRY_DAILY_LIMIT', value: string(tryDailyLimit) }
+            { name: 'ALLOWED_EMAILS', value: allowedEmails }
           ])
           probes: apiProbes
         }
