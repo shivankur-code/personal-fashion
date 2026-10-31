@@ -126,7 +126,7 @@ jobs:
       - name: Smoke test the public address
         run: |
           URL=https://$(az containerapp show -g $RG -n $API --query properties.configuration.ingress.fqdn -o tsv)
-          for p in / /healthz /readyz; do curl -fsS --max-time 60 $URL$p; echo; done
+          for p in / /healthz '/readyz?deep=1'; do curl -fsS --max-time 60 $URL$p; echo; done
           v=$(curl -fsS --max-time 60 $URL/v1/version)
           echo "$v" | grep -q "$TAG" || { echo "::error::public address serves $v, expected $TAG"; exit 1; }
 

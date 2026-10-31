@@ -46,10 +46,13 @@ async function api<T>(path: string, init: RequestInit = {}, retried = false): Pr
   return body;
 }
 
-interface Me { email: string; profile: Record<string, unknown> | null; hasPhoto: boolean; remainingToday: number }
+interface Me { email: string; profile: Record<string, unknown> | null; hasPhoto: boolean; remainingToday: number; maxGarments?: number }
+let maxGarments = 3;
 
 async function enter(): Promise<void> {
   const me = await api<Me>('/v1/me');
+  maxGarments = me.maxGarments ?? 3;
+  void renderItems();
   $('who').textContent = me.email;
   $('signin').classList.add('hidden');
   $('app').classList.remove('hidden');
@@ -201,15 +204,15 @@ async function renderItems(): Promise<void> {
     };
     card.onclick = () => {
       if (selected.has(k)) selected.delete(k);
-      else if (selected.size < 3) selected.add(k);
-      else return status('tryStatus', 'Pick up to 3 items.', 'err');
+      else if (selected.size < maxGarments) selected.add(k);
+      else return status('tryStatus', `Pick up to ${maxGarments} items.`, 'err');
       void renderItems();
     };
     card.append(img, t, x);
     box.appendChild(card);
   }
   $<HTMLButtonElement>('tryOn').disabled = selected.size === 0;
-  $('tryOn').textContent = `Try on selected (${selected.size}/3)`;
+  $('tryOn').textContent = `Try on selected (${selected.size}/${maxGarments})`;
 }
 
 $('clear').onclick = async () => { selected.clear(); await chrome.storage.local.set({ items: [] }); await chrome.action.setBadgeText({ text: '' }); };

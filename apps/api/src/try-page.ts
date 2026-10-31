@@ -43,7 +43,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
       <input type="file" id="personFile" accept="image/*">
     </section>
     <section class="card">
-      <h2>2. Garments (1–3)</h2>
+      <h2>2. Garments (1–<span id="maxG">3</span>)</h2>
       <div class="drop" id="garmentDrop">Click to choose, or paste an image<br>(on Amazon: right-click the product image → Copy image, then Ctrl+V here)</div>
       <input type="file" id="garmentFile" accept="image/*" multiple>
       <div class="thumbs" id="garmentThumbs"></div>
@@ -63,7 +63,8 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 </main>
 <script>
 (function () {
-  var person = null, garments = [];
+  var person = null, garments = [], maxG = 3;
+  fetch('/v1/config').then(function (r) { return r.json(); }).then(function (c) { maxG = c.maxGarments || 3; document.getElementById('maxG').textContent = maxG; }).catch(function () {});
   var $ = function (id) { return document.getElementById(id); };
   var codeBox = $('code');
   try { codeBox.value = localStorage.getItem('stylist-code') || ''; } catch (e) {}
@@ -87,7 +88,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   function status(msg, err) { var s = $('status'); s.textContent = msg; s.className = 'status' + (err ? ' err' : ''); }
   function showPerson(d) { person = d; $('personDrop').innerHTML = '<img alt="Your photo">'; $('personDrop').firstChild.src = d; }
   function addGarment(d) {
-    if (garments.length >= 3) { status('Up to 3 garments.', true); return; }
+    if (garments.length >= maxG) { status('Up to ' + maxG + ' garments.', true); return; }
     garments.push(d); var i = new Image(); i.alt = 'Garment ' + garments.length; i.src = d; $('garmentThumbs').appendChild(i);
   }
 
@@ -95,7 +96,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   $('garmentDrop').onclick = function () { $('garmentFile').click(); };
   $('personFile').onchange = function (e) { var f = e.target.files[0]; if (f) resize(f).then(showPerson, function (x) { status(x.message, true); }); };
   $('garmentFile').onchange = function (e) {
-    Array.prototype.slice.call(e.target.files, 0, 3).forEach(function (f) { resize(f).then(addGarment, function (x) { status(x.message, true); }); });
+    Array.prototype.slice.call(e.target.files, 0, maxG).forEach(function (f) { resize(f).then(addGarment, function (x) { status(x.message, true); }); });
   };
   $('clearGarments').onclick = function () { garments = []; $('garmentThumbs').innerHTML = ''; };
   document.addEventListener('paste', function (e) {

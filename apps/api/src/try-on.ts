@@ -10,7 +10,13 @@ export interface TryOnDeps {
   /** 'unset' or empty disables the endpoint (fail closed). */
   accessCode: string;
   dailyLimit: number;
+  /** Most garment images per try-on (tunable; FLUX.2 pro accepts 8 references incl. the person, so 1–7). */
+  maxGarments: number;
   now?: () => Date;
+}
+
+export function clampGarments(n: number): number {
+  return Math.min(7, Math.max(1, Math.floor(Number.isFinite(n) ? n : 3)));
 }
 
 /** One counter per API copy, shared by the /try page and the extension. Failed renders are given back. */
@@ -69,17 +75,22 @@ export function registerTryOn(app: FastifyInstance, deps: TryOnDeps, limiter: Da
     return reply.type('text/html; charset=utf-8').send(TRY_PAGE);
   });
 
+  // Public settings the page and the extension read on start.
+  app.get('/v1/config', async () => ({ maxGarments: clampGarments(deps.maxGarments), dailyLimit: limiter.limit }));
+
   app.post('/v1/try-on', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (!codeMatches(body.code, deps.accessCode)) return reply.code(401).send({ error: 'Wrong or missing access code.' });
     if (!deps.generator) return reply.code(503).send({ error: 'Try-on is not configured on this server.' });
 
     const person = decodeImage(body.person);
-    const garmentsIn = Array.isArray(body.garments) ? body.garments.slice(0, 3) : [];
+    const max = clampGarments(deps.maxGarments);
+    const garmentsIn = Array.isArray(body.garments) ? body.garments : [];
+    if (garmentsIn.length > max) return reply.code(400).send({ error: `Up to ${max} garments per try-on.` });
     const garments = garmentsIn.map(decodeImage);
     if (!person) return reply.code(400).send({ error: 'Add a JPEG, PNG or WebP photo of yourself (max 2 MB).' });
     if (garments.length === 0 || garments.some((g) => g === null)) {
-      return reply.code(400).send({ error: 'Add 1 to 3 garment images (JPEG, PNG or WebP, max 2 MB each).' });
+      return reply.code(400).send({ error: `Add 1 to ${max} garment images (JPEG, PNG or WebP, max 2 MB each).` });
     }
 
     if (!limiter.take()) return reply.code(429).send({ error: `Daily limit of ${limiter.limit} try-ons reached. Try again tomorrow.` });

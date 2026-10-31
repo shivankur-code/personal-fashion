@@ -13,6 +13,7 @@ const generator = foundry && hasIdentity ? new FluxImageGenerator({ endpoint: fo
 const account = process.env.STORAGE_ACCOUNT;
 const blobs = account && hasIdentity ? new AzureBlobStore(account, tokens) : null;
 const accessCode = process.env.TRY_ACCESS_CODE ?? '';
+const maxGarments = Number(process.env.TRY_MAX_GARMENTS ?? 3);
 const app = buildServer({
   pool,
   version: process.env.GIT_SHA ?? 'dev',
@@ -20,6 +21,7 @@ const app = buildServer({
     generator,
     accessCode,
     dailyLimit: Number(process.env.TRY_DAILY_LIMIT ?? 30),
+    maxGarments,
   },
   me: {
     verifier: googleVerifier(),
@@ -27,6 +29,7 @@ const app = buildServer({
     accessCode,
     blobs,
     generator,
+    maxGarments,
   },
 });
 

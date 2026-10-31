@@ -18,8 +18,8 @@ function setup(opts: { allowed?: string } = {}) {
   };
   const app = buildServer({
     pool: null, version: 't', logger: false,
-    tryOn: { generator, accessCode: 'code-1', dailyLimit: 2 },
-    me: { verifier, allowedEmails: opts.allowed ?? 'me@example.com', accessCode: 'code-1', blobs, generator },
+    tryOn: { generator, accessCode: 'code-1', dailyLimit: 2, maxGarments: 3 },
+    me: { verifier, allowedEmails: opts.allowed ?? 'me@example.com', accessCode: 'code-1', blobs, generator, maxGarments: 3 },
   });
   return { app, blobs, calls };
 }

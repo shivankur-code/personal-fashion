@@ -7,7 +7,7 @@ import type { ImageGenerator } from '@stylist/model-gateway';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { emailAllowed, type User, type Verifier } from './auth.js';
 import type { BlobStore } from './blob.js';
-import { buildPrompt, codeMatches, decodeImage, type DailyLimiter } from './try-on.js';
+import { buildPrompt, clampGarments, codeMatches, decodeImage, type DailyLimiter } from './try-on.js';
 
 export interface MeDeps {
   verifier: Verifier;
@@ -15,6 +15,7 @@ export interface MeDeps {
   accessCode: string;
   blobs: BlobStore | null;
   generator: ImageGenerator | null;
+  maxGarments: number;
 }
 
 /** Storage paths use a hash of the user ID, never the email. */
@@ -52,6 +53,7 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
       profile: profile ? JSON.parse(profile.toString('utf8')) as unknown : null,
       hasPhoto: photo !== null,
       remainingToday: limiter.remaining(),
+      maxGarments: clampGarments(deps.maxGarments),
     };
   });
 
@@ -78,9 +80,12 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     const blobs = storage(reply); if (!blobs) return reply;
     if (!deps.generator) return reply.code(503).send({ error: 'Try-on is not configured on this server.' });
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const garments = (Array.isArray(body.garments) ? body.garments.slice(0, 3) : []).map(decodeImage);
+    const max = clampGarments(deps.maxGarments);
+    const garmentsIn = Array.isArray(body.garments) ? body.garments : [];
+    if (garmentsIn.length > max) return reply.code(400).send({ error: `Pick up to ${max} items.` });
+    const garments = garmentsIn.map(decodeImage);
     if (garments.length === 0 || garments.some((g) => g === null)) {
-      return reply.code(400).send({ error: 'Pick 1 to 3 items to try on.' });
+      return reply.code(400).send({ error: `Pick 1 to ${max} items to try on.` });
     }
     const occasion = Occasion.safeParse(body.occasion);
     const person = await blobs.get(`photos/${userKey(user)}/person.jpg`);

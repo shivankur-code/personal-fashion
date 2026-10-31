@@ -20,7 +20,7 @@ describe('api health', () => {
 
   it('readyz reports not_configured (200) when no database is set', async () => {
     const app = buildServer({ pool: null, version: 't', logger: false });
-    const r = await app.inject({ url: '/readyz' });
+    const r = await app.inject({ url: '/readyz?deep=1' });
     expect(r.statusCode).toBe(200);
     expect(Health.parse(r.json()).database).toBe('not_configured');
   });
@@ -28,7 +28,7 @@ describe('api health', () => {
   it('readyz is 503 when the database is unreachable', async () => {
     const pool = createPool('postgresql://nobody:x@127.0.0.1:1/none', 1);
     const app = buildServer({ pool, version: 't', logger: false });
-    const r = await app.inject({ url: '/readyz' });
+    const r = await app.inject({ url: '/readyz?deep=1' });
     expect(r.statusCode).toBe(503);
     expect(Health.parse(r.json())).toMatchObject({ status: 'degraded', database: 'down' });
     await pool.end();
@@ -38,7 +38,7 @@ describe('api health', () => {
   (url ? it : it.skip)('readyz is 200 with a live database', async () => {
     const pool = createPool(url as string, 1);
     const app = buildServer({ pool, version: 't', logger: false });
-    const r = await app.inject({ url: '/readyz' });
+    const r = await app.inject({ url: '/readyz?deep=1' });
     expect(r.statusCode).toBe(200);
     expect(r.json().database).toBe('ok');
     await pool.end();

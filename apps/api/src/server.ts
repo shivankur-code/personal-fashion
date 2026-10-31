@@ -34,11 +34,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // does not make the platform restart healthy containers.
   app.get('/healthz', async () => ({ status: 'ok' }));
 
-  // Readiness: only send traffic when the database answers (if one is configured).
-  app.get('/readyz', async (_req, reply) => {
+  // Readiness: the platform calls this every 10 s. Pinging the database each time would keep a
+  // free serverless database (Neon) awake 24/7 and use up its free compute, so the database is
+  // only checked on request: /readyz?deep=1 (used by the release smoke test).
+  app.get<{ Querystring: { deep?: string } }>('/readyz', async (req, reply) => {
+    const deep = req.query.deep === '1';
     const database: Health['database'] = deps.pool === null
       ? 'not_configured'
-      : (await ping(deps.pool)) ? 'ok' : 'down';
+      : !deep ? 'ok' : (await ping(deps.pool)) ? 'ok' : 'down';
     const body: Health = {
       status: database === 'down' ? 'degraded' : 'ok',
       version: deps.version,

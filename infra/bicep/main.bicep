@@ -53,6 +53,11 @@ param tryAccessCode string = ''
 @description('Google accounts allowed to use the extension (comma-separated; "*" = any). Empty = nobody.')
 param allowedEmails string = ''
 
+@description('Most garment images per try-on (1-7).')
+@minValue(1)
+@maxValue(7)
+param tryMaxGarments int = 3
+
 @description('Most try-ons per day per API copy.')
 param tryDailyLimit int = 30
 
@@ -350,6 +355,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'TRY_ACCESS_CODE', secretRef: 'try-access-code' }
             { name: 'TRY_DAILY_LIMIT', value: string(tryDailyLimit) }
             { name: 'ALLOWED_EMAILS', value: allowedEmails }
+            { name: 'TRY_MAX_GARMENTS', value: string(tryMaxGarments) }
           ])
           probes: apiProbes
         }
