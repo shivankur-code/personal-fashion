@@ -15,7 +15,7 @@ export interface OpenRouterOptions {
 
 interface ChatResponse {
   model?: string;
-  choices?: { message?: { content?: string | null } }[];
+  choices?: { finish_reason?: string | null; message?: { content?: string | null } }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
   error?: { message?: string; code?: number };
 }
@@ -48,6 +48,8 @@ export class OpenRouterReasoner implements Reasoner {
           content: [{ type: 'text', text: req.user }, ...(req.images ?? []).map(imagePart)],
         },
       ],
+      ...(req.fallbackModels?.length ? { models: [req.model, ...req.fallbackModels] } : {}),
+      ...(req.reasoningEffort ? { reasoning: { effort: req.reasoningEffort, exclude: true } } : {}),
       max_tokens: req.maxOutputTokens ?? 1024,
       temperature: req.temperature ?? 0.2,
       usage: { include: true }, // ask OpenRouter to report cost
@@ -83,7 +85,14 @@ export class OpenRouterReasoner implements Reasoner {
       if (res.ok) {
         const data = (await res.json()) as ChatResponse;
         if (data.error) throw classify(data.error.code ?? 500, data.error.message ?? 'provider error');
-        const text = data.choices?.[0]?.message?.content ?? '';
+        const choice = data.choices?.[0];
+        const text = choice?.message?.content ?? '';
+        if (text.trim() === '') {
+          // Seen in rehearsal: a reasoning model used the whole budget thinking and returned nothing.
+          throw new ModelError(
+            `empty answer from ${data.model ?? req.model} (finish_reason=${choice?.finish_reason ?? 'unknown'}); raise maxOutputTokens or lower reasoningEffort`,
+            'invalid_output', false);
+        }
         let json: unknown | null = null;
         if (req.jsonSchema) {
           try { json = JSON.parse(text); } catch { throw new ModelError('model did not return valid JSON', 'invalid_output', false); }

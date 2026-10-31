@@ -7,6 +7,10 @@ export type ImageInput =
 
 export interface ReasonRequest {
   model: string;
+  /** Tried in order by the provider when `model` is busy or rate-limited (OpenRouter `models`). */
+  fallbackModels?: string[];
+  /** Reasoning models can spend the whole output budget thinking; keep it low for short answers. */
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
   system: string;
   /** Untrusted text (product titles, user prompt) goes here as data, never into `system`. */
   user: string;

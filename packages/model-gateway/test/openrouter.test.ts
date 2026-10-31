@@ -92,4 +92,24 @@ describe('OpenRouterReasoner', () => {
   it('refuses to start without a key', () => {
     expect(() => new OpenRouterReasoner({ apiKey: 'unset' })).toThrow(ModelError);
   });
+
+  it('sends fallback models and a low reasoning budget', async () => {
+    const f = fakeFetch([ok('hi')]);
+    const r = new OpenRouterReasoner({ apiKey: 'k', fetchImpl: f.impl, sleep: noSleep });
+    await r.reason({ model: 'a:free', fallbackModels: ['b:free', 'c:free'], reasoningEffort: 'low', system: 's', user: 'u' });
+    const body = JSON.parse(String(f.calls[0]!.init.body));
+    expect(body.models).toEqual(['a:free', 'b:free', 'c:free']);
+    expect(body.reasoning).toEqual({ effort: 'low', exclude: true });
+  });
+
+  it('reports an empty answer clearly (reasoning model used the whole budget)', async () => {
+    const f = fakeFetch([() => new Response(JSON.stringify({
+      model: 'm', choices: [{ finish_reason: 'length', message: { content: null } }],
+      usage: { prompt_tokens: 52, completion_tokens: 200, cost: 0 },
+    }), { status: 200 })]);
+    const r = new OpenRouterReasoner({ apiKey: 'k', fetchImpl: f.impl, sleep: noSleep });
+    await expect(r.reason({ model: 'm', system: 's', user: 'u' }))
+      .rejects.toMatchObject({ kind: 'invalid_output', message: expect.stringContaining('finish_reason=length') });
+  });
 });
+

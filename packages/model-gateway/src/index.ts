@@ -1,5 +1,6 @@
 export * from './types.js';
 export { classify, OpenRouterReasoner, type OpenRouterOptions } from './openrouter.js';
+export { checkModels, classifyModels, planModels, type ModelChoice } from './models.js';
 
 import { OpenRouterReasoner } from './openrouter.js';
 import type { Reasoner } from './types.js';
