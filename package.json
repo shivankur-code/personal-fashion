@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm secrets && pnpm lint && pnpm typecheck && pnpm test",
+    "secrets": "bash scripts/check-secrets.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

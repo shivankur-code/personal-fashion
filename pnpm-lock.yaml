@@ -73,6 +73,8 @@ importers:
         specifier: ^8.11.0
         version: 8.23.1
 
+  packages/model-gateway: {}
+
 packages:
 
   '@cacheable/memory@2.2.0':

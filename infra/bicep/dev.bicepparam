@@ -10,4 +10,4 @@ param extensionOrigin = 'chrome-extension://REPLACE_WITH_EXTENSION_ID'
 param apiMinReplicas = 0
 param enableBackgroundCompute = false
 // Secrets are passed on the command line, never stored in this file:
-//   --parameters anthropicApiKey=$ANTHROPIC_API_KEY databaseUrl=$NEON_DATABASE_URL
+//   --parameters llmApiKey=$LLM_API_KEY databaseUrl=$NEON_DATABASE_URL

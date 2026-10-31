@@ -43,7 +43,12 @@ param apiImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 param workerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
 @secure()
-param anthropicApiKey string = ''
+@description('API key for the reasoning model provider (OpenRouter). Passed from the shell, never stored in files.')
+param llmApiKey string = ''
+
+@description('Reasoning model provider and endpoint.')
+param llmProvider string = 'openrouter'
+param llmBaseUrl string = 'https://openrouter.ai/api/v1'
 
 @secure()
 @description('Postgres connection string. In dev this points at Neon; in beta at the Azure server.')
@@ -281,7 +286,7 @@ resource acaEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
 var acrServer = '${acrName}.azurecr.io'
 var usesAcr = startsWith(apiImage, acrServer)
 var commonSecrets = [
-  { name: 'anthropic-api-key', value: empty(anthropicApiKey) ? 'unset' : anthropicApiKey }
+  { name: 'llm-api-key', value: empty(llmApiKey) ? 'unset' : llmApiKey }
   { name: 'database-url', value: empty(databaseUrl) ? 'unset' : databaseUrl }
   { name: 'pubsub-connection', value: pubsub.listKeys().primaryConnectionString }
 ]
@@ -290,7 +295,9 @@ var commonEnv = [
   { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
   { name: 'STORAGE_ACCOUNT', value: storage.name }
   { name: 'FOUNDRY_ENDPOINT', value: 'https://${foundryName}.cognitiveservices.azure.com/' }
-  { name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }
+  { name: 'LLM_PROVIDER', value: llmProvider }
+  { name: 'LLM_BASE_URL', value: llmBaseUrl }
+  { name: 'LLM_API_KEY', secretRef: 'llm-api-key' }
   { name: 'DATABASE_URL', secretRef: 'database-url' }
   { name: 'PUBSUB_CONNECTION', secretRef: 'pubsub-connection' }
   { name: 'ENTRA_TENANT_ID', value: entraTenantId }

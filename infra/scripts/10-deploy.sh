@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Step 1-3: preview, then deploy the Bicep template. Secrets come from the shell, never from files.
-# Usage: ENV=dev ANTHROPIC_API_KEY=... DATABASE_URL=... [IMAGE_TAG=<git sha>] ./10-deploy.sh [--apply]
-#        ENV=beta ANTHROPIC_API_KEY=... PG_ADMIN_PASSWORD=... DATABASE_URL=... ./10-deploy.sh [--apply]
+# Usage: ENV=dev LLM_API_KEY=... DATABASE_URL=... [IMAGE_TAG=<git sha>] ./10-deploy.sh [--apply]
+#        ENV=beta LLM_API_KEY=... PG_ADMIN_PASSWORD=... DATABASE_URL=... ./10-deploy.sh [--apply]
 set -euo pipefail
 ENV=${ENV:?set ENV to dev or beta}
 RG=rg-stylist-$ENV
 HERE=$(cd "$(dirname "$0")/../bicep" && pwd)
 NAME=stylist-$ENV-$(date +%Y%m%d%H%M)
 
-PARAMS=(-p "$HERE/$ENV.bicepparam" -p anthropicApiKey="${ANTHROPIC_API_KEY:-}" -p databaseUrl="${DATABASE_URL:-}")
+PARAMS=(-p "$HERE/$ENV.bicepparam" -p llmApiKey="${LLM_API_KEY:-}" -p databaseUrl="${DATABASE_URL:-}")
 if [ "$ENV" != "dev" ]; then
   PARAMS+=(-p pgAdminPassword="${PG_ADMIN_PASSWORD:?set PG_ADMIN_PASSWORD}")
 fi
