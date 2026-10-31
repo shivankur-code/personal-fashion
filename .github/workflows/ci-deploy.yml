@@ -1,0 +1,137 @@
+name: ci-deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # OIDC sign-in to Azure, no stored secret
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  RG: rg-stylist-dev
+  ACR: myuniquebioregistry
+  API: stylist-dev-api
+  MIGRATE: stylist-dev-migrate
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: stylist
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:ci@localhost:5432/stylist
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: |
+            apps/api/dist/main.js
+            apps/worker/dist/main.js
+
+  deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: apps
+      - name: Check bundles are in place
+        run: ls -la apps/api/dist/main.js apps/worker/dist/main.js
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Guard - first release must be done by the owner (Phase D4)
+        run: |
+          port=$(az containerapp show -g $RG -n $API --query properties.configuration.ingress.targetPort -o tsv)
+          if [ "$port" != "8080" ]; then
+            echo "::error::API still uses the placeholder port ($port). Run the first release with infra/scripts/10-deploy.sh."
+            exit 1
+          fi
+
+      - name: Build and push images
+        run: |
+          TAG=${GITHUB_SHA::12}
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          az acr login -n $ACR
+          docker build -f apps/api/Dockerfile -t $ACR.azurecr.io/stylist-api:$TAG .
+          docker build -f apps/worker/Dockerfile -t $ACR.azurecr.io/stylist-worker:$TAG .
+          docker push $ACR.azurecr.io/stylist-api:$TAG
+          docker push $ACR.azurecr.io/stylist-worker:$TAG
+
+      - name: Migrate (stops the release on failure)
+        if: vars.DATABASE_CONFIGURED == 'true'
+        run: |
+          az containerapp job update -g $RG -n $MIGRATE --image $ACR.azurecr.io/stylist-worker:$TAG -o none
+          EXEC=$(az containerapp job start -g $RG -n $MIGRATE --query name -o tsv)
+          for i in $(seq 1 30); do
+            s=$(az containerapp job execution show -g $RG -n $MIGRATE --job-execution-name $EXEC --query properties.status -o tsv)
+            echo "migration $EXEC: $s"
+            [ "$s" = "Succeeded" ] && exit 0
+            [ "$s" = "Failed" ] && exit 1
+            sleep 10
+          done
+          echo "::error::migration did not finish in 5 minutes"; exit 1
+
+      - name: Pin traffic to the current revision
+        run: |
+          CUR=$(az containerapp revision list -g $RG -n $API --query "[?properties.trafficWeight > \`0\`].name | [0]" -o tsv)
+          echo "PREV=$CUR" >> $GITHUB_ENV
+          az containerapp ingress traffic set -g $RG -n $API --revision-weight $CUR=100 -o none
+
+      - name: New revision
+        run: |
+          SUFFIX=r${GITHUB_SHA::7}
+          az containerapp update -g $RG -n $API --image $ACR.azurecr.io/stylist-api:$TAG --revision-suffix $SUFFIX -o none
+          NEW=$API--$SUFFIX
+          echo "NEW=$NEW" >> $GITHUB_ENV
+          for i in $(seq 1 18); do
+            h=$(az containerapp revision show -g $RG -n $API --revision $NEW --query properties.healthState -o tsv)
+            echo "revision $NEW: $h"
+            [ "$h" = "Healthy" ] && exit 0
+            sleep 10
+          done
+          echo "::error::new revision not healthy in 3 minutes"; exit 1
+
+      - name: Smoke test the new revision directly
+        run: |
+          FQDN=$(az containerapp revision show -g $RG -n $API --revision $NEW --query properties.fqdn -o tsv)
+          curl -fsS --max-time 30 https://$FQDN/healthz
+          curl -fsS --max-time 30 https://$FQDN/readyz
+
+      - name: Shift traffic
+        run: az containerapp ingress traffic set -g $RG -n $API --revision-weight $NEW=100 -o none
+
+      - name: Roll back on failure
+        if: failure() && env.PREV != ''
+        run: az containerapp ingress traffic set -g $RG -n $API --revision-weight $PREV=100 -o none
