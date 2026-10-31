@@ -322,7 +322,9 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
     environmentId: acaEnv.id
     workloadProfileName: 'Consumption'
     configuration: {
-      activeRevisionsMode: 'Multiple'
+      // Single: a new version gets traffic only after it passes its readiness check; the old one
+      // keeps serving until then (zero-downtime). Rollback = redeploy the previous image tag.
+      activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: apiPort, transport: 'auto', allowInsecure: false }
       secrets: commonSecrets
       registries: registries

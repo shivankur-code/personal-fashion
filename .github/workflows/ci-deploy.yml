@@ -104,18 +104,17 @@ jobs:
           done
           echo "::error::migration did not finish in 5 minutes"; exit 1
 
-      - name: Pin traffic to the current revision
+      - name: Remember the live image (for rollback)
         run: |
-          CUR=$(az containerapp revision list -g $RG -n $API --query "[?properties.trafficWeight > \`0\`].name | [0]" -o tsv)
-          echo "PREV=$CUR" >> $GITHUB_ENV
-          az containerapp ingress traffic set -g $RG -n $API --revision-weight $CUR=100 -o none
+          PREV=$(az containerapp show -g $RG -n $API --query "properties.template.containers[0].image" -o tsv)
+          echo "PREV_IMAGE=$PREV" >> $GITHUB_ENV
+          echo "live image: $PREV"
 
-      - name: New revision
+      - name: Release (single-version mode keeps the old version serving until the new one is ready)
         run: |
           SUFFIX=r${GITHUB_SHA::7}
           az containerapp update -g $RG -n $API --image $ACR.azurecr.io/stylist-api:$TAG --revision-suffix $SUFFIX -o none
           NEW=$API--$SUFFIX
-          echo "NEW=$NEW" >> $GITHUB_ENV
           for i in $(seq 1 18); do
             h=$(az containerapp revision show -g $RG -n $API --revision $NEW --query properties.healthState -o tsv)
             echo "revision $NEW: $h"
@@ -124,15 +123,13 @@ jobs:
           done
           echo "::error::new revision not healthy in 3 minutes"; exit 1
 
-      - name: Smoke test the new revision directly
+      - name: Smoke test the public address
         run: |
-          FQDN=$(az containerapp revision show -g $RG -n $API --revision $NEW --query properties.fqdn -o tsv)
-          curl -fsS --max-time 30 https://$FQDN/healthz
-          curl -fsS --max-time 30 https://$FQDN/readyz
+          URL=https://$(az containerapp show -g $RG -n $API --query properties.configuration.ingress.fqdn -o tsv)
+          for p in / /healthz /readyz; do curl -fsS --max-time 60 $URL$p; echo; done
+          v=$(curl -fsS --max-time 60 $URL/v1/version)
+          echo "$v" | grep -q "$TAG" || { echo "::error::public address serves $v, expected $TAG"; exit 1; }
 
-      - name: Shift traffic
-        run: az containerapp ingress traffic set -g $RG -n $API --revision-weight $NEW=100 -o none
-
-      - name: Roll back on failure
-        if: failure() && env.PREV != ''
-        run: az containerapp ingress traffic set -g $RG -n $API --revision-weight $PREV=100 -o none
+      - name: Roll back on failure (redeploy the previous image)
+        if: failure() && env.PREV_IMAGE != ''
+        run: az containerapp update -g $RG -n $API --image "$PREV_IMAGE" -o none

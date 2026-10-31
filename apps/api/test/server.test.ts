@@ -11,6 +11,13 @@ describe('api health', () => {
     expect(r.headers['x-content-type-options']).toBe('nosniff');
   });
 
+  it('the bare address answers 200 with the service name and version', async () => {
+    const app = buildServer({ pool: null, version: 'abc', logger: false });
+    const r = await app.inject({ url: '/' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ service: 'stylist-api', status: 'ok', version: 'abc' });
+  });
+
   it('readyz reports not_configured (200) when no database is set', async () => {
     const app = buildServer({ pool: null, version: 't', logger: false });
     const r = await app.inject({ url: '/readyz' });

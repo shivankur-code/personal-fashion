@@ -45,5 +45,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   app.get('/v1/version', async () => ({ version: deps.version }));
 
+  // Landing response, so opening the bare address in a browser shows the service is up.
+  app.get('/', async () => ({
+    service: 'stylist-api',
+    status: 'ok',
+    version: deps.version,
+    routes: ['/healthz', '/readyz', '/v1/version'],
+  }));
+
   return app;
 }

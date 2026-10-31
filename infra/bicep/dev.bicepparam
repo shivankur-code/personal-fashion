@@ -7,7 +7,8 @@ param monthlyBudget = 30
 param budgetStartDate = '2026-11-01'
 param createPostgres = false
 param extensionOrigin = 'chrome-extension://REPLACE_WITH_EXTENSION_ID'
-param apiMinReplicas = 0
+// 1 copy always running: waking from zero took 53 s (31 Oct). Cost about $4.75/month.
+param apiMinReplicas = 1
 param enableBackgroundCompute = false
 // Secrets are passed on the command line, never stored in this file:
 //   --parameters llmApiKey=$LLM_API_KEY databaseUrl=$NEON_DATABASE_URL
