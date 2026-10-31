@@ -1,5 +1,5 @@
 import { createPool, isDatabaseConfigured } from '@stylist/db';
-import { FluxImageGenerator, managedIdentityTokenProvider } from '@stylist/model-gateway';
+import { FluxImageGenerator, managedIdentityTokenProvider, OpenRouterReasoner } from '@stylist/model-gateway';
 import { googleVerifier } from './auth.js';
 import { AzureBlobStore } from './blob.js';
 import { buildServer } from './server.js';
@@ -14,11 +14,23 @@ const account = process.env.STORAGE_ACCOUNT;
 const blobs = account && hasIdentity ? new AzureBlobStore(account, tokens) : null;
 const accessCode = process.env.TRY_ACCESS_CODE ?? '';
 const maxGarments = Number(process.env.TRY_MAX_GARMENTS ?? 3);
+// Free vision model for the decision and check steps. Short timeout and one retry: if the free
+// pool is busy, the pipeline falls back to title rules instead of making the user wait.
+const llmKey = process.env.LLM_API_KEY ?? '';
+const reasoner = llmKey && llmKey !== 'unset'
+  ? new OpenRouterReasoner({ apiKey: llmKey, appName: 'Stylist', timeoutMs: 30_000, maxRetries: 1, ...(process.env.LLM_BASE_URL ? { baseUrl: process.env.LLM_BASE_URL } : {}) })
+  : null;
+const pipeline = {
+  generator,
+  reasoner,
+  check: process.env.TRY_CHECK !== 'off',
+  maxRetries: Number(process.env.TRY_MAX_RETRIES ?? 2),
+};
 const app = buildServer({
   pool,
   version: process.env.GIT_SHA ?? 'dev',
   tryOn: {
-    generator,
+    ...pipeline,
     accessCode,
     dailyLimit: Number(process.env.TRY_DAILY_LIMIT ?? 30),
     maxGarments,
@@ -28,7 +40,7 @@ const app = buildServer({
     allowedEmails: process.env.ALLOWED_EMAILS ?? '',
     accessCode,
     blobs,
-    generator,
+    ...pipeline,
     maxGarments,
   },
 });

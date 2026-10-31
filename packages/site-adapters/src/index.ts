@@ -13,7 +13,11 @@ export interface Product {
   price?: number;
   currency?: string;
   imageUrl: string;
+  /** Other gallery photos of the same product (garment-only shots often live here). */
+  altImageUrls?: string[];
 }
+
+export const MAX_ALT_IMAGES = 5;
 
 export function marketplaceOf(url: URL): Marketplace {
   const h = url.hostname;
@@ -85,6 +89,34 @@ function amazonLargestImage(doc: Document): string | undefined {
   return img?.getAttribute('src') ?? undefined;
 }
 
+function allImages(v: unknown): string[] {
+  if (Array.isArray(v)) return v.flatMap(allImages);
+  const one = firstImage(v);
+  return one ? [one] : [];
+}
+
+/** Amazon thumbnails carry a size token (…/I/71ab._AC_US40_.jpg); removing it gives the full image. */
+export function amazonFullSize(src: string): string {
+  return src.replace(/\._[^/]*_(\.[a-z]+)$/i, '$1');
+}
+
+function galleryImages(doc: Document, m: Marketplace, ld: JsonLdProduct | undefined): string[] {
+  const out = allImages(ld?.image);
+  if (m === 'amazon') {
+    doc.querySelectorAll('#altImages li.imageThumbnail img, #altImages li.item:not(.videoThumbnail) img').forEach((img) => {
+      const src = img.getAttribute('src');
+      if (src && !/play-button|video/i.test(src)) out.push(amazonFullSize(src));
+    });
+  }
+  if (m === 'myntra') {
+    doc.querySelectorAll<HTMLElement>('.image-grid-image').forEach((el) => {
+      const u = /url\(["']?([^"')]+)["']?\)/.exec(el.style.backgroundImage)?.[1];
+      if (u) out.push(u);
+    });
+  }
+  return out;
+}
+
 /** Returns null when the page is not a product page we can read. */
 export function extractProduct(doc: Document, href: string): Product | null {
   const url = new URL(href);
@@ -129,5 +161,18 @@ export function extractProduct(doc: Document, href: string): Product | null {
   if (brand) product.brand = brand.slice(0, 120);
   if (price !== undefined) product.price = price;
   if (currency) product.currency = currency;
+  // Same photo at another size counts once (Amazon size tokens differ per thumbnail).
+  const seen = new Set([amazonFullSize(product.imageUrl)]);
+  const alts: string[] = [];
+  for (const raw of galleryImages(doc, m, ld)) {
+    let abs: string;
+    try { abs = new URL(raw, url).href; } catch { continue; }
+    if (!abs.startsWith('https://')) continue;
+    const key = amazonFullSize(abs);
+    if (seen.has(key)) continue;
+    seen.add(key); alts.push(abs);
+    if (alts.length >= MAX_ALT_IMAGES) break;
+  }
+  if (alts.length) product.altImageUrls = alts;
   return product;
 }

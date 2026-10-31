@@ -1,16 +1,28 @@
-// "Try it" page and endpoint: upload your photo + 1–3 garment images, get a FLUX.2 try-on back.
+// "Try it" page and endpoint: upload your photo + garment images, get a try-on back.
 // Guarded by an access code and a daily limit; photos are used for the one request and not stored.
 import { timingSafeEqual } from 'node:crypto';
-import type { ImageGenerator } from '@stylist/model-gateway';
-import type { FastifyInstance } from 'fastify';
+import type { ImageGenerator, Reasoner } from '@stylist/model-gateway';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
+import type { GarmentInput } from './outfit.js';
+import { MAX_CANDIDATES, NothingToWearError, runTryOn, type PipelineDeps, type TryOnOutcome } from './pipeline.js';
 import { TRY_PAGE } from './try-page.js';
 
-export interface TryOnDeps {
+/** Settings shared by both try-on routes. */
+export interface PipelineSettings {
   generator: ImageGenerator | null;
+  /** Vision model for the decision and check steps; null = title rules, no checks. */
+  reasoner?: Reasoner | null;
+  /** Check each pass and retry once on failure (default true when a reasoner is set). */
+  check?: boolean;
+  /** Most re-renders per try-on (default 2). */
+  maxRetries?: number;
+}
+
+export interface TryOnDeps extends PipelineSettings {
   /** 'unset' or empty disables the endpoint (fail closed). */
   accessCode: string;
   dailyLimit: number;
-  /** Most garment images per try-on (tunable; FLUX.2 pro accepts 8 references incl. the person, so 1–7). */
+  /** Most garments per try-on (tunable 1–7). Each garment is one render pass. */
   maxGarments: number;
   now?: () => Date;
 }
@@ -54,18 +66,46 @@ export function codeMatches(given: unknown, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function buildPrompt(garments: number, note: string): string {
-  const refs = garments === 1 ? 'the garment from image 2' : `the garments from images 2 to ${garments + 1}`;
-  const safeNote = note.replace(/[^\p{L}\p{N} ,.'-]/gu, '').slice(0, 200);
-  return `Dress the person from image 1 in ${refs}. `
-    + 'Keep the person\'s face, hair, skin tone, body shape and pose exactly the same, and keep the background. '
-    + 'Layering: jackets, blazers, coats, shrugs and cardigans go OVER what the person already wears; '
-    + 'never remove the shirt or top underneath. A new top replaces only the old top, new trousers or a skirt '
-    + 'replace only the old bottoms, a dress replaces top and bottoms, shoes replace shoes, accessories are added. '
-    + 'Keep every other item the person wears unchanged. '
-    + 'Match each garment\'s colour, fabric, pattern and details exactly. Full-length, photorealistic.'
-    + (safeNote ? ` Styling note: ${safeNote}.` : '');
+/**
+ * Garments arrive as a plain image (base64) or { images: [base64...], title } with several candidate
+ * photos of one product. Returns an error message for the user, or the parsed garments.
+ */
+export function parseGarments(raw: unknown, max: number): GarmentInput[] | string {
+  const list = Array.isArray(raw) ? raw : [];
+  if (list.length === 0 || list.length > max) return `Pick 1 to ${max} items to try on.`;
+  const out: GarmentInput[] = [];
+  for (const g of list) {
+    const obj = typeof g === 'string' ? { images: [g] } : (g ?? {}) as { images?: unknown; title?: unknown };
+    const imgs = Array.isArray(obj.images) ? obj.images.slice(0, MAX_CANDIDATES).map(decodeImage) : [];
+    const valid = imgs.filter((b): b is Buffer => b !== null);
+    if (valid.length === 0) return 'Each item needs a JPEG, PNG or WebP image (max 2 MB).';
+    out.push({ images: valid, ...(typeof obj.title === 'string' ? { title: obj.title.slice(0, 300) } : {}) });
+  }
+  return out;
 }
+
+export function pipelineDeps(s: PipelineSettings & { generator: ImageGenerator }, log: FastifyBaseLogger): PipelineDeps {
+  return {
+    generator: s.generator,
+    reasoner: s.reasoner ?? null,
+    check: s.check ?? true,
+    maxRetries: s.maxRetries ?? 2,
+    log,
+  };
+}
+
+export function outcomeBody(r: TryOnOutcome, remainingToday: number) {
+  return {
+    image: `data:image/jpeg;base64,${r.image.toString('base64')}`,
+    latencyMs: r.latencyMs,
+    estimatedCostUsd: r.estimatedCostUsd,
+    remainingToday,
+    passes: r.passes,
+    notes: r.notes,
+  };
+}
+
+export { NothingToWearError };
 
 export function registerTryOn(app: FastifyInstance, deps: TryOnDeps, limiter: DailyLimiter): void {
 
@@ -84,35 +124,20 @@ export function registerTryOn(app: FastifyInstance, deps: TryOnDeps, limiter: Da
     if (!deps.generator) return reply.code(503).send({ error: 'Try-on is not configured on this server.' });
 
     const person = decodeImage(body.person);
-    const max = clampGarments(deps.maxGarments);
-    const garmentsIn = Array.isArray(body.garments) ? body.garments : [];
-    if (garmentsIn.length > max) return reply.code(400).send({ error: `Up to ${max} garments per try-on.` });
-    const garments = garmentsIn.map(decodeImage);
     if (!person) return reply.code(400).send({ error: 'Add a JPEG, PNG or WebP photo of yourself (max 2 MB).' });
-    if (garments.length === 0 || garments.some((g) => g === null)) {
-      return reply.code(400).send({ error: `Add 1 to ${max} garment images (JPEG, PNG or WebP, max 2 MB each).` });
-    }
+    const garments = parseGarments(body.garments, clampGarments(deps.maxGarments));
+    if (typeof garments === 'string') return reply.code(400).send({ error: garments });
 
     if (!limiter.take()) return reply.code(429).send({ error: `Daily limit of ${limiter.limit} try-ons reached. Try again tomorrow.` });
 
     const note = typeof body.note === 'string' ? body.note : '';
     try {
-      const r = await deps.generator.generate({
-        model: 'FLUX.2-pro',
-        prompt: buildPrompt(garments.length, note),
-        references: [person, ...(garments as Buffer[])].map((b) => b.toString('base64')),
-        width: 768,
-        height: 1024,
-      });
-      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, garments: garments.length }, 'try-on done');
-      return {
-        image: `data:image/jpeg;base64,${r.image.toString('base64')}`,
-        latencyMs: r.latencyMs,
-        estimatedCostUsd: r.estimatedCostUsd,
-        remainingToday: limiter.remaining(),
-      };
+      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, note);
+      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, passes: r.passes }, 'try-on done');
+      return outcomeBody(r, limiter.remaining());
     } catch (err) {
       limiter.giveBack(); // failed renders don't count
+      if (err instanceof NothingToWearError) return reply.code(400).send({ error: err.message });
       req.log.error({ err: String(err).slice(0, 300) }, 'try-on failed');
       return reply.code(502).send({ error: 'The image model failed. Please try again in a minute.' });
     }

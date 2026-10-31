@@ -38,6 +38,21 @@ describe('site adapters', () => {
     });
   });
 
+  it('Amazon gallery: full-size alternates, no duplicates of the main photo, no videos', async () => {
+    const html = `<span id="productTitle">Linen Blazer</span>
+      <img id="landingImage" data-old-hires="https://m.media-amazon.com/images/I/a._SL1500_.jpg">
+      <div id="altImages"><ul>
+        <li class="item imageThumbnail"><img src="https://m.media-amazon.com/images/I/a._AC_US40_.jpg"></li>
+        <li class="item imageThumbnail"><img src="https://m.media-amazon.com/images/I/b._AC_US40_.jpg"></li>
+        <li class="item videoThumbnail"><img src="https://m.media-amazon.com/images/I/v._AC_US40_.jpg"></li>
+        <li class="item imageThumbnail"><img src="https://m.media-amazon.com/images/I/c._SS40_.png"></li>
+      </ul></div>`;
+    expect(await extract(html, 'https://www.amazon.in/dp/B0ABCDEFGH')).toMatchObject({
+      imageUrl: 'https://m.media-amazon.com/images/I/a._SL1500_.jpg',
+      altImageUrls: ['https://m.media-amazon.com/images/I/b.jpg', 'https://m.media-amazon.com/images/I/c.png'],
+    });
+  });
+
   it('Amazon search page is not a product', async () => {
     const html = '<meta property="og:title" content="Amazon.in : blazer"><meta property="og:image" content="https://x/y.jpg">';
     expect(await extract(html, 'https://www.amazon.in/s?k=blazer')).toBeNull();
@@ -51,6 +66,9 @@ describe('site adapters', () => {
       marketplace: 'myntra', externalId: '12345678', title: 'Floral A-Line Dress', brand: 'W', price: 1499, currency: 'INR',
       imageUrl: 'https://assets.myntassets.com/a.jpg',
     });
+    const two = html.replace('"https://assets.myntassets.com/a.jpg"', '"https://assets.myntassets.com/a.jpg","https://assets.myntassets.com/b.jpg"');
+    expect(await extract(two, 'https://www.myntra.com/dresses/w/w-floral-dress/12345678/buy'))
+      .toMatchObject({ altImageUrls: ['https://assets.myntassets.com/b.jpg'] });
   });
 
   it('falls back to Open Graph tags', async () => {

@@ -35,7 +35,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 <body>
 <main>
   <h1>Try it on</h1>
-  <p class="lead">Add a full-length photo of yourself and up to 3 garments. Photos are used for this one request and not stored.</p>
+  <p class="lead">Add a full-length photo of yourself and up to <span id="maxG2">3</span> garments. Each garment is put on in its own step. Photos are used for this one request and not stored.</p>
   <div class="grid">
     <section class="card">
       <h2>1. Your photo</h2>
@@ -64,7 +64,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 <script>
 (function () {
   var person = null, garments = [], maxG = 3;
-  fetch('/v1/config').then(function (r) { return r.json(); }).then(function (c) { maxG = c.maxGarments || 3; document.getElementById('maxG').textContent = maxG; }).catch(function () {});
+  fetch('/v1/config').then(function (r) { return r.json(); }).then(function (c) { maxG = c.maxGarments || 3; document.getElementById('maxG').textContent = maxG; document.getElementById('maxG2').textContent = maxG; }).catch(function () {});
   var $ = function (id) { return document.getElementById(id); };
   var codeBox = $('code');
   try { codeBox.value = localStorage.getItem('stylist-code') || ''; } catch (e) {}
@@ -115,7 +115,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     if (!garments.length) return status('Add at least one garment.', true);
     if (!codeBox.value) return status('Enter the access code.', true);
     try { localStorage.setItem('stylist-code', codeBox.value); } catch (e) {}
-    $('go').disabled = true; status('Rendering… usually about 10 seconds.');
+    $('go').disabled = true; status('Rendering one garment at a time… about ' + (10 + garments.length * 15) + ' seconds.');
     var t0 = Date.now();
     fetch('/v1/try-on', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -126,6 +126,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
         $('result').style.display = 'block';
         $('resultBody').innerHTML = '<img alt="Try-on result">';
         $('resultBody').firstChild.src = x.b.image;
+        (x.b.notes || []).forEach(function (n) { var p = document.createElement('p'); p.className = 'status'; p.textContent = n; $('resultBody').appendChild(p); });
         status('Done in ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s · about $' + x.b.estimatedCostUsd.toFixed(2) + ' · ' + x.b.remainingToday + ' left today. Right-click the image to save it.');
       })
       .catch(function (e) { status(e.message, true); })

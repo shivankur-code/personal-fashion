@@ -53,10 +53,18 @@ param tryAccessCode string = ''
 @description('Google accounts allowed to use the extension (comma-separated; "*" = any). Empty = nobody.')
 param allowedEmails string = ''
 
-@description('Most garment images per try-on (1-7).')
+@description('Most garments per try-on (1-7). Each garment is one render pass (about $0.06-0.08).')
 @minValue(1)
 @maxValue(7)
 param tryMaxGarments int = 3
+
+@description('Check each try-on pass with the free vision model and re-render once if the person or item is wrong.')
+param tryCheck bool = true
+
+@description('Most re-renders per try-on when a check fails (each costs one image).')
+@minValue(0)
+@maxValue(5)
+param tryMaxRetries int = 2
 
 @description('Most try-ons per day per API copy.')
 param tryDailyLimit int = 30
@@ -356,6 +364,8 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'TRY_DAILY_LIMIT', value: string(tryDailyLimit) }
             { name: 'ALLOWED_EMAILS', value: allowedEmails }
             { name: 'TRY_MAX_GARMENTS', value: string(tryMaxGarments) }
+            { name: 'TRY_CHECK', value: tryCheck ? 'on' : 'off' }
+            { name: 'TRY_MAX_RETRIES', value: string(tryMaxRetries) }
           ])
           probes: apiProbes
         }

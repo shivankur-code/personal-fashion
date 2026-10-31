@@ -3,18 +3,20 @@
 // while the Google OAuth client is being set up.
 import { createHash } from 'node:crypto';
 import { Occasion, Profile } from '@stylist/contracts';
-import type { ImageGenerator } from '@stylist/model-gateway';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { emailAllowed, type User, type Verifier } from './auth.js';
 import type { BlobStore } from './blob.js';
-import { buildPrompt, clampGarments, codeMatches, decodeImage, type DailyLimiter } from './try-on.js';
+import { runTryOn } from './pipeline.js';
+import {
+  clampGarments, codeMatches, decodeImage, NothingToWearError, outcomeBody, parseGarments, pipelineDeps,
+  type DailyLimiter, type PipelineSettings,
+} from './try-on.js';
 
-export interface MeDeps {
+export interface MeDeps extends PipelineSettings {
   verifier: Verifier;
   allowedEmails: string;
   accessCode: string;
   blobs: BlobStore | null;
-  generator: ImageGenerator | null;
   maxGarments: number;
 }
 
@@ -80,13 +82,8 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     const blobs = storage(reply); if (!blobs) return reply;
     if (!deps.generator) return reply.code(503).send({ error: 'Try-on is not configured on this server.' });
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const max = clampGarments(deps.maxGarments);
-    const garmentsIn = Array.isArray(body.garments) ? body.garments : [];
-    if (garmentsIn.length > max) return reply.code(400).send({ error: `Pick up to ${max} items.` });
-    const garments = garmentsIn.map(decodeImage);
-    if (garments.length === 0 || garments.some((g) => g === null)) {
-      return reply.code(400).send({ error: `Pick 1 to ${max} items to try on.` });
-    }
+    const garments = parseGarments(body.garments, clampGarments(deps.maxGarments));
+    if (typeof garments === 'string') return reply.code(400).send({ error: garments });
     const occasion = Occasion.safeParse(body.occasion);
     const person = await blobs.get(`photos/${userKey(user)}/person.jpg`);
     if (!person) return reply.code(409).send({ error: 'Add your full-length photo first (Profile tab).' });
@@ -95,22 +92,12 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     const note = [occasion.success ? `outfit for ${occasion.data}` : '', typeof body.prompt === 'string' ? body.prompt : '']
       .filter(Boolean).join(', ');
     try {
-      const r = await deps.generator.generate({
-        model: 'FLUX.2-pro',
-        prompt: buildPrompt(garments.length, note),
-        references: [person, ...(garments as Buffer[])].map((b) => b.toString('base64')),
-        width: 768,
-        height: 1024,
-      });
-      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, garments: garments.length, via: 'extension' }, 'try-on done');
-      return {
-        image: `data:image/jpeg;base64,${r.image.toString('base64')}`,
-        latencyMs: r.latencyMs,
-        estimatedCostUsd: r.estimatedCostUsd,
-        remainingToday: limiter.remaining(),
-      };
+      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, note);
+      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, passes: r.passes, via: 'extension' }, 'try-on done');
+      return outcomeBody(r, limiter.remaining());
     } catch (err) {
       limiter.giveBack();
+      if (err instanceof NothingToWearError) return reply.code(400).send({ error: err.message });
       req.log.error({ err: String(err).slice(0, 300) }, 'try-on failed');
       return reply.code(502).send({ error: 'The image model failed. Please try again in a minute.' });
     }

@@ -225,9 +225,16 @@ $('tryOn').onclick = async () => {
   const t0 = Date.now();
   try {
     status('tryStatus', 'Preparing images…');
-    const garments = await Promise.all(picks.map((p) => toJpegDataUrl(p.imageUrl)));
-    status('tryStatus', 'Rendering on you… about 10–20 seconds.');
-    const r = await api<{ image: string; estimatedCostUsd: number; remainingToday: number }>('/v1/me/try-on', {
+    // Main photo plus gallery photos: the server picks the one that shows the item best.
+    // Same cap as the server: at most 12 photos in total, at most 4 per item.
+    const per = Math.max(1, Math.min(4, Math.floor(12 / picks.length)));
+    const garments = await Promise.all(picks.map(async (p) => {
+      const urls = [p.imageUrl, ...(p.altImageUrls ?? [])].slice(0, per);
+      const imgs = await Promise.all(urls.map((u, i) => toJpegDataUrl(u).catch((e: unknown) => { if (i === 0) throw e; return null; })));
+      return { title: p.title, images: imgs.filter((x): x is string => x !== null) };
+    }));
+    status('tryStatus', `Picking the best photos, then dressing you one item at a time… about ${10 + picks.length * 15} seconds.`);
+    const r = await api<{ image: string; estimatedCostUsd: number; remainingToday: number; notes?: string[] }>('/v1/me/try-on', {
       method: 'POST',
       body: JSON.stringify({ garments, occasion: $<HTMLSelectElement>('occasion').value || s.occasion, prompt: $<HTMLInputElement>('prompt').value }),
     });
@@ -235,6 +242,7 @@ $('tryOn').onclick = async () => {
     const img = document.createElement('img'); img.src = r.image; img.alt = 'You wearing the selected items';
     const a = document.createElement('a'); a.href = r.image; a.download = `stylist-${Date.now()}.jpg`; a.textContent = 'Save image';
     box.append(img, a);
+    for (const n of r.notes ?? []) { const p = document.createElement('p'); p.className = 'status'; p.textContent = n; box.append(p); }
     status('tryStatus', `Done in ${((Date.now() - t0) / 1000).toFixed(1)} s · about $${r.estimatedCostUsd.toFixed(2)} · ${r.remainingToday} left today`, 'ok');
   } catch (err) {
     status('tryStatus', (err as Error).message, 'err');

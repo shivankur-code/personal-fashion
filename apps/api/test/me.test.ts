@@ -64,8 +64,9 @@ describe('signed-in routes', () => {
     await app.inject({ method: 'PUT', url: '/v1/me/photo', headers: auth, payload: { photo: JPEG } });
     const r = await app.inject({ method: 'POST', url: '/v1/me/try-on', headers: auth, payload: body });
     expect(r.statusCode).toBe(200);
+    expect(calls).toHaveLength(2); // one pass per garment
     expect(calls[0]!.references![0]).toBe(JPEG);
-    expect(calls[0]!.references).toHaveLength(3);
+    expect(calls[0]!.references).toHaveLength(2);
     expect(calls[0]!.prompt).toContain('outfit for office, smart casual');
   });
 
