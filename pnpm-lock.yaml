@@ -53,6 +53,12 @@ importers:
       '@stylist/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@stylist/model-gateway':
+        specifier: workspace:*
+        version: link:../../packages/model-gateway
+      jpeg-js:
+        specifier: ^0.4.4
+        version: 0.4.4
       pg-boss:
         specifier: ^12.38.0
         version: 12.38.0(@opentelemetry/api@1.10.0)
@@ -782,6 +788,9 @@ packages:
 
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
+
+  jpeg-js@0.4.4:
+    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   json-schema-ref-resolver@3.0.1:
     resolution: {integrity: sha512-w+HwgljXpVwZ3IidoUR1qPZxSOQ+NRQWuVe6a5pe8XbHsNZE4UAwVPUvzZagn7yBKbJtt6UJnRFYbNTRPZI45Q==}
@@ -1915,6 +1924,8 @@ snapshots:
       is-extglob: 2.1.1
 
   isexe@2.0.0: {}
+
+  jpeg-js@0.4.4: {}
 
   json-schema-ref-resolver@3.0.1:
     dependencies:

@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@stylist/db": "workspace:*",
+    "@stylist/model-gateway": "workspace:*",
+    "jpeg-js": "^0.4.4",
     "pg-boss": "^12.38.0"
   }
 }

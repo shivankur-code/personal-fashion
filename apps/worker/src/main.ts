@@ -3,11 +3,13 @@
 //   node main.js job <name>   -> run one job and exit 0/1 (the Container Apps jobs)
 import { createPool, isDatabaseConfigured } from '@stylist/db';
 import { cleanup, grantMonthlyCredits, healthcheck, JOB_NAMES, migrate, sweep, type JobName } from './jobs.js';
+import { evalSmoke } from './eval-smoke.js';
 import { log } from './log.js';
 import { createBoss, ensureQueues, QUEUES } from './queues.js';
 
 async function runJob(name: JobName): Promise<void> {
   if (name === 'healthcheck') return healthcheck(process.env.API_URL);
+  if (name === 'eval-smoke') return evalSmoke();
   const url = process.env.DATABASE_URL;
   if (!isDatabaseConfigured(url)) throw new Error('DATABASE_URL is not set');
   const pool = createPool(url, Number(process.env.PG_POOL_MAX ?? 1));

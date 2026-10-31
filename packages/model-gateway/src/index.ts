@@ -1,6 +1,8 @@
 export * from './types.js';
 export { classify, OpenRouterReasoner, type OpenRouterOptions } from './openrouter.js';
 export { checkModels, classifyModels, planModels, type ModelChoice } from './models.js';
+export { managedIdentityTokenProvider, type TokenProvider } from './azure-identity.js';
+export { FluxImageGenerator, fluxCostUsd, type FluxOptions, type GenerateRequest, type GenerateResult, type ImageGenerator } from './flux.js';
 
 import { OpenRouterReasoner } from './openrouter.js';
 import type { Reasoner } from './types.js';

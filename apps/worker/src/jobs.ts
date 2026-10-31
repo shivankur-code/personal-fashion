@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { createBoss, ensureQueues } from './queues.js';
 import { log } from './log.js';
 
-export const JOB_NAMES = ['migrate', 'sweep', 'grant-monthly-credits', 'cleanup', 'healthcheck'] as const;
+export const JOB_NAMES = ['migrate', 'sweep', 'grant-monthly-credits', 'cleanup', 'healthcheck', 'eval-smoke'] as const;
 export type JobName = (typeof JOB_NAMES)[number];
 
 export interface JobContext {
