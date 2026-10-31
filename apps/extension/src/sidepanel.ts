@@ -233,8 +233,8 @@ $('tryOn').onclick = async () => {
       const imgs = await Promise.all(urls.map((u, i) => toJpegDataUrl(u).catch((e: unknown) => { if (i === 0) throw e; return null; })));
       return { title: p.title, images: imgs.filter((x): x is string => x !== null) };
     }));
-    status('tryStatus', `Picking the best photos, then dressing you one item at a time… about ${10 + picks.length * 15} seconds.`);
-    const r = await api<{ image: string; estimatedCostUsd: number; remainingToday: number; notes?: string[] }>('/v1/me/try-on', {
+    status('tryStatus', 'Reading your photo and the items, then dressing you… about 30–60 seconds.');
+    const r = await api<{ image: string; estimatedCostUsd: number; remainingToday: number; notes?: string[]; styling?: string; advice?: { item: number; verdict: string }[] }>('/v1/me/try-on', {
       method: 'POST',
       body: JSON.stringify({ garments, occasion: $<HTMLSelectElement>('occasion').value || s.occasion, prompt: $<HTMLInputElement>('prompt').value }),
     });
@@ -242,7 +242,10 @@ $('tryOn').onclick = async () => {
     const img = document.createElement('img'); img.src = r.image; img.alt = 'You wearing the selected items';
     const a = document.createElement('a'); a.href = r.image; a.download = `stylist-${Date.now()}.jpg`; a.textContent = 'Save image';
     box.append(img, a);
-    for (const n of r.notes ?? []) { const p = document.createElement('p'); p.className = 'status'; p.textContent = n; box.append(p); }
+    const line = (text: string) => { const p = document.createElement('p'); p.className = 'status'; p.textContent = text; box.append(p); };
+    if (r.styling) line(`How to wear it: ${r.styling}`);
+    for (const a of r.advice ?? []) line(`${picks[a.item - 1]?.title.slice(0, 40) ?? `Item ${a.item}`}: ${a.verdict}`);
+    for (const n of r.notes ?? []) line(n);
     status('tryStatus', `Done in ${((Date.now() - t0) / 1000).toFixed(1)} s · about $${r.estimatedCostUsd.toFixed(2)} · ${r.remainingToday} left today`, 'ok');
   } catch (err) {
     status('tryStatus', (err as Error).message, 'err');

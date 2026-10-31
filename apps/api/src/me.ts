@@ -85,15 +85,20 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     const garments = parseGarments(body.garments, clampGarments(deps.maxGarments));
     if (typeof garments === 'string') return reply.code(400).send({ error: garments });
     const occasion = Occasion.safeParse(body.occasion);
-    const person = await blobs.get(`photos/${userKey(user)}/person.jpg`);
+    const [person, savedProfile] = await Promise.all([
+      blobs.get(`photos/${userKey(user)}/person.jpg`), blobs.get(`exports/profiles/${userKey(user)}.json`),
+    ]);
     if (!person) return reply.code(409).send({ error: 'Add your full-length photo first (Profile tab).' });
+    // Height, weight and fit go into the render prompt; a broken or old profile is simply ignored.
+    const parsedProfile = savedProfile ? Profile.safeParse(JSON.parse(savedProfile.toString('utf8'))) : null;
+    const profile = parsedProfile?.success ? parsedProfile.data : null;
     if (!limiter.take()) return reply.code(429).send({ error: `Daily limit of ${limiter.limit} try-ons reached. Try again tomorrow.` });
 
     const note = [occasion.success ? `outfit for ${occasion.data}` : '', typeof body.prompt === 'string' ? body.prompt : '']
       .filter(Boolean).join(', ');
     try {
-      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, note);
-      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, passes: r.passes, via: 'extension' }, 'try-on done');
+      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, { note, profile });
+      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, mode: r.mode, renders: r.renders, passes: r.passes, hasProfile: profile !== null, via: 'extension' }, 'try-on done');
       return outcomeBody(r, limiter.remaining());
     } catch (err) {
       limiter.giveBack();

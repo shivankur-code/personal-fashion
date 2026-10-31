@@ -61,15 +61,15 @@ describe('try-on', () => {
     expect((await post(app, { code: 'secret-code', person: JPEG, garments: [] })).statusCode).toBe(400);
   });
 
-  it('renders one garment per pass, anchoring later passes to the original photo', async () => {
+  it('renders all garments in one call by default, person first, then the garments', async () => {
     const { app, calls } = server();
     const r = await post(app, { code: 'secret-code', person: `data:image/jpeg;base64,${JPEG}`, garments: [JPEG, JPEG], note: 'open' });
     expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ mode: 'oneshot', renders: 1 });
     expect(r.json().image).toMatch(/^data:image\/jpeg;base64,/);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]!.references).toHaveLength(2);
-    expect(calls[1]!.references).toHaveLength(3);
-    expect(calls[1]!.references![2]).toBe(JPEG); // original photo as identity anchor
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.references).toHaveLength(3);
+    expect(calls[0]!.references![0]).toBe(JPEG);
     expect(calls[0]!.prompt).toContain('Styling note: open.');
     expect(calls[0]!.seed).toBeTypeOf('number');
   });
@@ -79,7 +79,8 @@ describe('try-on', () => {
     const r = await post(app, { code: 'secret-code', person: JPEG, garments: [{ images: [JPEG, JPEG], title: 'Navy linen blazer' }] });
     expect(r.statusCode).toBe(200);
     expect(r.json().passes).toEqual([{ item: 1, category: 'outerwear', decidedBy: 'rules', check: 'skipped', retried: false }]);
-    expect(calls[0]!.prompt).toContain('OVER what the person already wears');
+    expect(calls[0]!.prompt).toContain('image 2: outer layer');
+    expect(calls[0]!.prompt).toContain('go OVER the top');
   });
 
   it('enforces the daily limit, and failed renders do not count', async () => {

@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { ImageGenerator, Reasoner } from '@stylist/model-gateway';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import type { GarmentInput } from './outfit.js';
-import { MAX_CANDIDATES, NothingToWearError, runTryOn, type PipelineDeps, type TryOnOutcome } from './pipeline.js';
+import { MAX_CANDIDATES, NothingToWearError, runTryOn, type PipelineDeps, type TryOnMode, type TryOnOutcome } from './pipeline.js';
 import { TRY_PAGE } from './try-page.js';
 
 /** Settings shared by both try-on routes. */
@@ -14,8 +14,10 @@ export interface PipelineSettings {
   reasoner?: Reasoner | null;
   /** Check each pass and retry once on failure (default true when a reasoner is set). */
   check?: boolean;
-  /** Most re-renders per try-on (default 2). */
+  /** Most re-renders per try-on (default 1). */
   maxRetries?: number;
+  /** 'oneshot' (default): all items in one image call. 'per-item': one call per item. */
+  mode?: TryOnMode;
 }
 
 export interface TryOnDeps extends PipelineSettings {
@@ -89,7 +91,8 @@ export function pipelineDeps(s: PipelineSettings & { generator: ImageGenerator }
     generator: s.generator,
     reasoner: s.reasoner ?? null,
     check: s.check ?? true,
-    maxRetries: s.maxRetries ?? 2,
+    maxRetries: s.maxRetries ?? 1,
+    mode: s.mode ?? 'oneshot',
     log,
   };
 }
@@ -100,8 +103,12 @@ export function outcomeBody(r: TryOnOutcome, remainingToday: number) {
     latencyMs: r.latencyMs,
     estimatedCostUsd: r.estimatedCostUsd,
     remainingToday,
+    mode: r.mode,
+    renders: r.renders,
     passes: r.passes,
     notes: r.notes,
+    advice: r.advice,
+    styling: r.styling,
   };
 }
 
@@ -132,8 +139,8 @@ export function registerTryOn(app: FastifyInstance, deps: TryOnDeps, limiter: Da
 
     const note = typeof body.note === 'string' ? body.note : '';
     try {
-      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, note);
-      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, passes: r.passes }, 'try-on done');
+      const r = await runTryOn(pipelineDeps({ ...deps, generator: deps.generator }, req.log), person, garments, { note });
+      req.log.info({ latencyMs: r.latencyMs, costUsd: r.estimatedCostUsd, mode: r.mode, renders: r.renders, passes: r.passes }, 'try-on done');
       return outcomeBody(r, limiter.remaining());
     } catch (err) {
       limiter.giveBack(); // failed renders don't count

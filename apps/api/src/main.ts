@@ -24,7 +24,8 @@ const pipeline = {
   generator,
   reasoner,
   check: process.env.TRY_CHECK !== 'off',
-  maxRetries: Number(process.env.TRY_MAX_RETRIES ?? 2),
+  maxRetries: Number(process.env.TRY_MAX_RETRIES ?? 1),
+  mode: process.env.TRY_MODE === 'per-item' ? 'per-item' as const : 'oneshot' as const,
 };
 const app = buildServer({
   pool,

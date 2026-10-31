@@ -64,7 +64,11 @@ param tryCheck bool = true
 @description('Most re-renders per try-on when a check fails (each costs one image).')
 @minValue(0)
 @maxValue(5)
-param tryMaxRetries int = 2
+param tryMaxRetries int = 1
+
+@description('oneshot: all items in one image call, regenerate only if the check fails. per-item: one image call per item.')
+@allowed(['oneshot', 'per-item'])
+param tryMode string = 'oneshot'
 
 @description('Most try-ons per day per API copy.')
 param tryDailyLimit int = 30
@@ -366,6 +370,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'TRY_MAX_GARMENTS', value: string(tryMaxGarments) }
             { name: 'TRY_CHECK', value: tryCheck ? 'on' : 'off' }
             { name: 'TRY_MAX_RETRIES', value: string(tryMaxRetries) }
+            { name: 'TRY_MODE', value: tryMode }
           ])
           probes: apiProbes
         }

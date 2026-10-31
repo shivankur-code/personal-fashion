@@ -35,7 +35,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 <body>
 <main>
   <h1>Try it on</h1>
-  <p class="lead">Add a full-length photo of yourself and up to <span id="maxG2">3</span> garments. Each garment is put on in its own step. Photos are used for this one request and not stored.</p>
+  <p class="lead">Add a full-length photo of yourself and up to <span id="maxG2">3</span> garments. Photos are used for this one request and not stored.</p>
   <div class="grid">
     <section class="card">
       <h2>1. Your photo</h2>
@@ -115,7 +115,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     if (!garments.length) return status('Add at least one garment.', true);
     if (!codeBox.value) return status('Enter the access code.', true);
     try { localStorage.setItem('stylist-code', codeBox.value); } catch (e) {}
-    $('go').disabled = true; status('Rendering one garment at a time… about ' + (10 + garments.length * 15) + ' seconds.');
+    $('go').disabled = true; status('Reading your photo and the garments, then dressing you… about 30–60 seconds.');
     var t0 = Date.now();
     fetch('/v1/try-on', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -126,7 +126,10 @@ export const TRY_PAGE = /* html */ `<!doctype html>
         $('result').style.display = 'block';
         $('resultBody').innerHTML = '<img alt="Try-on result">';
         $('resultBody').firstChild.src = x.b.image;
-        (x.b.notes || []).forEach(function (n) { var p = document.createElement('p'); p.className = 'status'; p.textContent = n; $('resultBody').appendChild(p); });
+        var line = function (t) { var p = document.createElement('p'); p.className = 'status'; p.textContent = t; $('resultBody').appendChild(p); };
+        if (x.b.styling) line('How to wear it: ' + x.b.styling);
+        (x.b.advice || []).forEach(function (a) { line('Garment ' + a.item + ': ' + a.verdict); });
+        (x.b.notes || []).forEach(line);
         status('Done in ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s · about $' + x.b.estimatedCostUsd.toFixed(2) + ' · ' + x.b.remainingToday + ' left today. Right-click the image to save it.');
       })
       .catch(function (e) { status(e.message, true); })

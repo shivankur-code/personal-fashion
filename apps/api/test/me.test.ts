@@ -64,10 +64,20 @@ describe('signed-in routes', () => {
     await app.inject({ method: 'PUT', url: '/v1/me/photo', headers: auth, payload: { photo: JPEG } });
     const r = await app.inject({ method: 'POST', url: '/v1/me/try-on', headers: auth, payload: body });
     expect(r.statusCode).toBe(200);
-    expect(calls).toHaveLength(2); // one pass per garment
+    expect(calls).toHaveLength(1); // one shot: all garments in one call
     expect(calls[0]!.references![0]).toBe(JPEG);
-    expect(calls[0]!.references).toHaveLength(2);
+    expect(calls[0]!.references).toHaveLength(3);
     expect(calls[0]!.prompt).toContain('outfit for office, smart casual');
+  });
+
+  it('puts the saved height and fit into the image prompt', async () => {
+    const { app, calls } = setup();
+    await app.inject({ method: 'PUT', url: '/v1/me/photo', headers: auth, payload: { photo: JPEG } });
+    await app.inject({ method: 'PUT', url: '/v1/me/profile', headers: auth, payload: { heightCm: 178, weightKg: 74, styles: ['classic'], fit: 'slim' } });
+    const r = await app.inject({ method: 'POST', url: '/v1/me/try-on', headers: auth, payload: { garments: [JPEG] } });
+    expect(r.statusCode).toBe(200);
+    expect(calls[0]!.prompt).toContain('The person is about 178 cm tall, about 74 kg.');
+    expect(calls[0]!.prompt).toContain('Fit: slim');
   });
 
   it('shares the daily limit with the /try page', async () => {
