@@ -6,7 +6,7 @@ import { Occasion, Profile } from '@stylist/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { emailAllowed, type User, type Verifier } from './auth.js';
 import type { BlobStore } from './blob.js';
-import { runTryOn } from './pipeline.js';
+import { fingerprint, runTryOn } from './pipeline.js';
 import {
   clampGarments, codeMatches, decodeImage, NothingToWearError, outcomeBody, parseGarments, pipelineDeps,
   type DailyLimiter, type PipelineSettings,
@@ -28,7 +28,13 @@ export function userKey(user: User): string {
 export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLimiter): void {
   async function authenticate(req: FastifyRequest, reply: FastifyReply): Promise<User | null> {
     const code = req.headers['x-access-code'];
-    if (typeof code === 'string' && codeMatches(code, deps.accessCode)) return { id: 'access-code:owner', email: 'owner@access-code' };
+    if (typeof code === 'string' && codeMatches(code, deps.accessCode)) {
+      // Each extension install sends its own random ID, so a test browser can never overwrite
+      // someone else's photo (a test did exactly that on 1 Nov while all code users shared one slot).
+      const device = req.headers['x-device-id'];
+      const ok = typeof device === 'string' && /^[0-9a-f-]{36}$/i.test(device);
+      return ok ? { id: `access-code:${device.toLowerCase()}`, email: 'device@access-code' } : { id: 'access-code:owner', email: 'owner@access-code' };
+    }
     const auth = req.headers.authorization;
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
     const user = token ? await deps.verifier(token).catch(() => null) : null;
@@ -74,6 +80,7 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     if (!photo) return reply.code(400).send({ error: 'Add a JPEG, PNG or WebP photo (max 2 MB).' });
     const blobs = storage(reply); if (!blobs) return reply;
     await blobs.put(`photos/${userKey(user)}/person.jpg`, photo, 'image/jpeg');
+    req.log.info({ user: userKey(user).slice(0, 8), photo: fingerprint(photo), bytes: photo.length }, 'profile photo saved');
     return { ok: true };
   });
 
@@ -92,6 +99,7 @@ export function registerMe(app: FastifyInstance, deps: MeDeps, limiter: DailyLim
     // Height, weight and fit go into the render prompt; a broken or old profile is simply ignored.
     const parsedProfile = savedProfile ? Profile.safeParse(JSON.parse(savedProfile.toString('utf8'))) : null;
     const profile = parsedProfile?.success ? parsedProfile.data : null;
+    req.log.info({ user: userKey(user).slice(0, 8), person: fingerprint(person), profile }, 'try-on inputs');
     if (!limiter.take()) return reply.code(429).send({ error: `Daily limit of ${limiter.limit} try-ons reached. Try again tomorrow.` });
 
     const note = [occasion.success ? `outfit for ${occasion.data}` : '', typeof body.prompt === 'string' ? body.prompt : '']

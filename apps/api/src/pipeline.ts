@@ -69,6 +69,11 @@ function mediaType(b: Buffer): 'image/jpeg' | 'image/png' | 'image/webp' {
 }
 const asInput = (b: Buffer): ImageInput => ({ kind: 'base64', mediaType: mediaType(b), data: b.toString('base64') });
 
+/** Short, stable fingerprint of an image for logs: shows which photo was used without logging it. */
+export function fingerprint(b: Buffer): string {
+  return createHash('sha256').update(b).digest('hex').slice(0, 12);
+}
+
 /** Same inputs give the same seed, so repeating a try-on gives the same picture. */
 export function seedFor(parts: Buffer[]): number {
   const h = createHash('sha256');
@@ -100,12 +105,18 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
     // more starting from the next model in the list.
     const m = classifyModels(env);
     const all = [m.model, ...m.fallbackModels];
+    const userText = decideUserText(garments, { note: ctx.note, profile });
+    deps.log?.info({
+      person: fingerprint(person),
+      items: garments.map((g, i) => ({ item: i + 1, title: g.title?.slice(0, 120) ?? null, photos: g.images.map(fingerprint) })),
+      userText,
+    }, 'try-on decide request');
     for (const list of [all, all.slice(1)]) {
       if (list.length === 0) break;
       try {
         const r = await deps.reasoner.reason({
           model: list[0]!, fallbackModels: list.slice(1), reasoningEffort: 'low', temperature: 0,
-          system: DECIDE_SYSTEM, user: decideUserText(garments, { note: ctx.note, profile }),
+          system: DECIDE_SYSTEM, user: userText,
           images: [person, ...garments.flatMap((g) => g.images)].map(asInput),
           jsonSchema: DECIDE_SCHEMA, maxOutputTokens: Math.min(10_000, 3000 + 1000 * garments.length),
         }, AbortSignal.timeout(80_000));
@@ -115,6 +126,7 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
         deps.log?.info({
           model: r.model, latencyMs: r.latencyMs, body: advice.body,
           decisions: decisions.map((d) => [d.category, d.image, d.wornByModel]),
+          answer: r.text.slice(0, 4000),
         }, 'try-on decided');
         break;
       } catch (err) {
@@ -124,13 +136,19 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
     if (decisions.every((d) => d.source === 'rules')) deps.log?.warn({}, 'decision model unavailable; using title rules');
   }
 
-  const { passes, notes } = planOutfit(decisions);
+  const planned = planOutfit(decisions);
+  const notes = planned.notes;
+  // One image can show only one top, one pair of trousers and so on. Asking for three tops at once
+  // made the check fail and paid for a pointless regeneration (seen live, 1 Nov), so in one-shot
+  // mode only the last-picked item per slot is rendered (the note from planOutfit says so).
+  const passes = mode === 'oneshot' ? lastPerSlot(planned.passes) : planned.passes;
   if (passes.length === 0) throw new NothingToWearError('None of the picked items look like clothing.');
   const chosen = passes.map((p) => garments[p.index]!.images[p.decision.image]!);
   const seed = seedFor([person, ...chosen]);
   const checking = deps.check && deps.reasoner !== null;
 
-  const render = async (prompt: string, refs: Buffer[], s: number) => {
+  const render = async (prompt: string, refs: Buffer[], s: number, label: string) => {
+    deps.log?.info({ step: label, seed: s, references: refs.map(fingerprint), prompt }, 'try-on render');
     const r = await deps.generator.generate({
       model: 'FLUX.2-pro', prompt, width: 768, height: 1024, seed: s, references: refs.map((b) => b.toString('base64')),
     });
@@ -148,14 +166,14 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
     const promptFor = (retryReason?: string) => outfitPrompt(items, {
       body: advice.body, profile, styling: advice.styling, note: ctx.note, ...(retryReason ? { retryReason } : {}),
     });
-    image = await render(promptFor(), [person, ...chosen], seed); renders++;
+    image = await render(promptFor(), [person, ...chosen], seed, 'oneshot'); renders++;
     let result = checking ? await checkOutfit(deps, env, person, image, chosen, cost) : null;
     let retried = false;
     for (let attempt = 1; result && !result.ok && attempt <= deps.maxRetries; attempt++) {
       retried = true;
       const reason = result.reason || describeFailure(result);
       deps.log?.info({ attempt, reason, missing: result.missing }, 'try-on rejected; regenerating');
-      image = await render(promptFor(reason), [person, ...chosen], seed + attempt); renders++;
+      image = await render(promptFor(reason), [person, ...chosen], seed + attempt, `oneshot retry ${attempt}`); renders++;
       result = await checkOutfit(deps, env, person, image, chosen, cost);
     }
     if (result && !result.ok) notes.push(`The picture may not match exactly: ${result.reason || describeFailure(result)}.`);
@@ -174,7 +192,7 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
       const promptFor = (retryReason?: string) => passPrompt(p.decision, {
         anchor, note: ctx.note, body: advice.body, profile, ...(retryReason ? { retryReason } : {}),
       });
-      let step = await render(promptFor(), refs, seed + i * 101); renders++;
+      let step = await render(promptFor(), refs, seed + i * 101, `item ${p.index + 1}`); renders++;
       let check: PassReport['check'] = 'skipped';
       let retried = false;
       if (checking) {
@@ -182,7 +200,7 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
         if (result && !result.ok && retriesLeft > 0) {
           retriesLeft--; retried = true;
           deps.log?.info({ pass: i + 1, reason: result.reason }, 'try-on pass rejected; retrying');
-          step = await render(promptFor(result.reason || (result.samePerson ? 'the item was not applied correctly' : 'the face changed')), refs, seed + i * 101 + 1);
+          step = await render(promptFor(result.reason || (result.samePerson ? 'the item was not applied correctly' : 'the face changed')), refs, seed + i * 101 + 1, `item ${p.index + 1} retry`);
           renders++;
           result = await checkPass(deps, env, person, step, garment, cost);
         }
@@ -202,6 +220,14 @@ export async function runTryOn(deps: PipelineDeps, person: Buffer, garmentsIn: G
     advice: advice.verdicts.map((verdict, i) => ({ item: i + 1, verdict })).filter((a) => a.verdict),
     styling: advice.styling,
   };
+}
+
+const EXCLUSIVE: Category[] = ['top', 'bottom', 'one-piece', 'shoes'];
+
+/** Keeps only the last item for slots one person can wear once (passes are already in dressing order). */
+export function lastPerSlot<T extends { index: number; decision: Decision }>(passes: T[]): T[] {
+  return passes.filter((p) => !EXCLUSIVE.includes(p.decision.category)
+    || !passes.some((q) => q.decision.category === p.decision.category && q.index > p.index));
 }
 
 function describeFailure(r: OutfitCheck): string {
@@ -224,6 +250,7 @@ async function checkOutfit(
       jsonSchema: OUTFIT_CHECK_SCHEMA, maxOutputTokens: 2000,
     }, AbortSignal.timeout(45_000));
     cost.usd += r.usage.costUsd ?? 0;
+    deps.log?.info({ model: r.model, latencyMs: r.latencyMs, result: fingerprint(result), answer: r.text.slice(0, 1500) }, 'try-on check');
     return parseOutfitCheck(r.json, items.length);
   } catch (err) {
     deps.log?.warn({ err: String(err).slice(0, 200) }, 'check model unavailable; result accepted unchecked');
@@ -243,6 +270,7 @@ async function checkPass(
       jsonSchema: CHECK_SCHEMA, maxOutputTokens: 1000,
     }, AbortSignal.timeout(45_000));
     cost.usd += r.usage.costUsd ?? 0;
+    deps.log?.info({ model: r.model, latencyMs: r.latencyMs, result: fingerprint(result), answer: r.text.slice(0, 1500) }, 'try-on check');
     return parseCheck(r.json);
   } catch (err) {
     deps.log?.warn({ err: String(err).slice(0, 200) }, 'check model unavailable; pass accepted unchecked');

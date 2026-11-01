@@ -27,10 +27,19 @@ async function googleToken(interactive: boolean): Promise<string | null> {
   }
 }
 
+/** Random ID per install: access-code sign-ins on different browsers get separate storage. */
+async function deviceId(): Promise<string> {
+  const { deviceId: id } = (await chrome.storage.local.get('deviceId')) as { deviceId?: string };
+  if (id) return id;
+  const fresh = crypto.randomUUID();
+  await chrome.storage.local.set({ deviceId: fresh });
+  return fresh;
+}
+
 async function api<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   let token: string | null = null;
-  if (auth?.kind === 'code') headers['x-access-code'] = auth.code;
+  if (auth?.kind === 'code') { headers['x-access-code'] = auth.code; headers['x-device-id'] = await deviceId(); }
   if (auth?.kind === 'google') {
     token = await googleToken(false);
     if (!token) throw new Error('Please sign in again.');

@@ -4,7 +4,7 @@ import {
   bodyText, categoryFromTitle, decideUserText, outfitPrompt, parseAdvice, parseDecisions, parseOutfitCheck, planOutfit,
   type Decision,
 } from '../src/outfit.js';
-import { runTryOn, trimCandidates, type PipelineDeps } from '../src/pipeline.js';
+import { fingerprint, runTryOn, trimCandidates, type PipelineDeps } from '../src/pipeline.js';
 
 // Distinct fake JPEGs so we can tell which photo was sent where.
 const img = (n: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(50, n)]);
@@ -208,6 +208,33 @@ describe('try-on pipeline, one shot (default)', () => {
     const llm = reasoner({ person: PERSON_CARD, styling: '', products: [{ product: 1, best_photo: 2, category: 'not-clothing', worn_by_model: false, description: 'a lamp', verdict: '' }] });
     await expect(runTryOn(deps({ generator: gen.g, reasoner: llm.r }), PERSON, [{ images: [img(2)] }], { note: '' })).rejects.toThrow('look like clothing');
     expect(gen.calls).toHaveLength(0);
+  });
+});
+
+describe('try-on pipeline, debugging and slot rules', () => {
+  it('renders only the last of several tops in one shot and says so', async () => {
+    const gen = generator();
+    const out = await runTryOn(deps({ generator: gen.g }), PERSON,
+      [{ images: [img(2)], title: 'Linen Shirt' }, { images: [img(3)], title: 'Cotton Tee' }, { images: [img(4)], title: 'Polo T-Shirt' }], { note: '' });
+    expect(gen.calls[0]!.references).toEqual([PERSON.toString('base64'), b64(4)]);
+    expect(out.passes.map((p) => p.item)).toEqual([3]);
+    expect(out.notes.join(' ')).toContain('3 tops; the last one is what you');
+  });
+
+  it('logs the photos used, the decision request and answer, every render prompt and every check', async () => {
+    const gen = generator();
+    const llm = reasoner({ person: PERSON_CARD, styling: 'open', products: [
+      { product: 1, best_photo: 2, category: 'top', worn_by_model: false, description: 'white tee', verdict: '' }] });
+    const logs: { msg: string; o: Record<string, unknown> }[] = [];
+    const log = { info: (o: object, msg: string) => logs.push({ msg, o: o as Record<string, unknown> }), warn: (o: object, msg: string) => logs.push({ msg, o: o as Record<string, unknown> }) };
+    await runTryOn(deps({ generator: gen.g, reasoner: llm.r, log }), PERSON, [{ images: [img(2)], title: 'Tee' }], { note: 'office' });
+    const by = (m: string) => logs.find((l) => l.msg === m)!.o;
+    expect(by('try-on decide request')).toMatchObject({ person: fingerprint(PERSON), items: [{ item: 1, title: 'Tee', photos: [fingerprint(img(2))] }] });
+    expect(by('try-on decide request').userText).toContain('Occasion and note: "office"');
+    expect(String(by('try-on decided').answer)).toContain('white tee');
+    expect(by('try-on render')).toMatchObject({ step: 'oneshot', prompt: gen.calls[0]!.prompt, references: [fingerprint(PERSON), fingerprint(img(2))] });
+    expect(by('try-on check')).toHaveProperty('answer');
+    expect(fingerprint(PERSON)).toMatch(/^[0-9a-f]{12}$/);
   });
 });
 

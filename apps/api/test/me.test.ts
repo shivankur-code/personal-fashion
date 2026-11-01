@@ -80,6 +80,16 @@ describe('signed-in routes', () => {
     expect(calls[0]!.prompt).toContain('Fit: slim');
   });
 
+  it('keeps access-code users on different devices apart', async () => {
+    const { app } = setup();
+    const a = { 'x-access-code': 'code-1', 'x-device-id': '11111111-1111-4111-8111-111111111111' };
+    const b = { 'x-access-code': 'code-1', 'x-device-id': '22222222-2222-4222-8222-222222222222' };
+    await app.inject({ method: 'PUT', url: '/v1/me/photo', headers: a, payload: { photo: JPEG } });
+    expect((await app.inject({ url: '/v1/me', headers: a })).json().hasPhoto).toBe(true);
+    expect((await app.inject({ url: '/v1/me', headers: b })).json().hasPhoto).toBe(false);
+    expect((await app.inject({ url: '/v1/me', headers: { 'x-access-code': 'code-1', 'x-device-id': 'not-a-uuid' } })).json().hasPhoto).toBe(false);
+  });
+
   it('shares the daily limit with the /try page', async () => {
     const { app } = setup();
     await app.inject({ method: 'PUT', url: '/v1/me/photo', headers: auth, payload: { photo: JPEG } });
