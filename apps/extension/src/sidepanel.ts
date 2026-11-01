@@ -211,8 +211,8 @@ async function renderItems(): Promise<void> {
     card.append(img, t, x);
     box.appendChild(card);
   }
-  $<HTMLButtonElement>('tryOn').disabled = selected.size === 0;
-  $('tryOn').textContent = `Try on selected (${selected.size}/${maxGarments})`;
+  // The button stays clickable: a greyed-out button with no reason confused testers (1 Nov).
+  $('tryOn').textContent = selected.size === 0 ? 'Try on (tap items above to pick them)' : `Try on ${selected.size} of ${maxGarments} items`;
 }
 
 $('clear').onclick = async () => { selected.clear(); await chrome.storage.local.set({ items: [] }); await chrome.action.setBadgeText({ text: '' }); };
@@ -220,6 +220,11 @@ $('clear').onclick = async () => { selected.clear(); await chrome.storage.local.
 $('tryOn').onclick = async () => {
   const { items = [] } = (await chrome.storage.local.get('items')) as { items?: ViewedItem[] };
   const picks = items.filter((i) => selected.has(keyOf(i)));
+  if (picks.length === 0) {
+    return status('tryStatus', items.length === 0
+      ? 'No items yet. Press Start, then open product pages and stay on each for 3 seconds.'
+      : 'Tap one or more items above to pick them (a blue outline shows it is picked), then press Try on.', 'err');
+  }
   const s = await getSession();
   $<HTMLButtonElement>('tryOn').disabled = true;
   const t0 = Date.now();
@@ -250,7 +255,7 @@ $('tryOn').onclick = async () => {
   } catch (err) {
     status('tryStatus', (err as Error).message, 'err');
   } finally {
-    $<HTMLButtonElement>('tryOn').disabled = selected.size === 0;
+    $<HTMLButtonElement>('tryOn').disabled = false;
   }
 };
 
